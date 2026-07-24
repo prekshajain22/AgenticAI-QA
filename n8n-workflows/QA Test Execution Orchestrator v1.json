@@ -1,0 +1,199 @@
+{
+  "name": "QA Test Execution Orchestrator v1",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -352,
+        -112
+      ],
+      "id": "f5b72fe5-c8f8-4730-88b9-c1365c25275d",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "http://host.containers.internal:5000/run-tests",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -160,
+        -112
+      ],
+      "id": "67360fb4-fc1e-490e-a74f-87bcba9681be",
+      "name": "Run Tests"
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "==QA Automation Execution - {{$node[\"Run Tests\"].json.execution_status}}",
+        "html": "==QA Automation Execution Completed\n\n<br><br>\n\n<b>Status:</b><br>\n{{$node[\"Run Tests\"].json.execution_status}}\n\n<br><br>\n\n<b>Summary</b><br>\n\nTotal Tests:\n{{$node[\"Run Tests\"].json.summary.total}}<br>\n\nPassed:\n{{$node[\"Run Tests\"].json.summary.passed}}<br>\n\nFailed:\n{{$node[\"Run Tests\"].json.summary.failed}}<br>\n\nDuration:\n{{$node[\"Run Tests\"].json.summary.duration}} seconds\n\n<br><br>\n\n<b>Failed Tests</b><br>\n\n{{\n$node[\"Run Tests\"].json.failed_tests.length\n? $node[\"Run Tests\"].json.failed_tests.map(test => `\n<hr>\n<b>Test:</b> ${test.name}<br>\n<b>Failing Step:</b> ${test.failing_step}<br>\n<b>Error:</b> ${test.error}<br>\n<b>Screenshot:</b> ${test.screenshot}<br>\n`).join(\"\")\n: \"None 🎉\"\n}}\n\n<br><br>\n\nReport attached.",
+        "options": {
+          "fileAttachments": "data"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        528,
+        -128
+      ],
+      "id": "6cc7a422-7632-4ead-863e-e52dbb7dc498",
+      "name": "Send an Email",
+      "webhookId": "50879f8c-b6d5-4244-95b0-9006547bad70",
+      "credentials": {
+        "smtp": {
+          "id": "AApLdx6JqlR3R3gN",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://host.containers.internal:5000/download-report",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        288,
+        -128
+      ],
+      "id": "f66b7f08-ab14-4b30-902a-8c7ae31c06f1",
+      "name": "Download QA Report"
+    },
+    {
+      "parameters": {
+        "jsCode": "const failedTests = $json.tests\n  ?.filter(test => test.status === \"FAILED\")\n  .map(test => ({\n    name: test.name,\n    reason: test.failure || \"Unknown failure\"\n  })) || [];\n\nreturn [\n  {\n    json: {\n      ...$json,\n      failure_summary: {\n        total_failures: failedTests.length,\n        failed_tests: failedTests\n      }\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -368
+      ],
+      "id": "d20c8902-8b65-4fe9-ac03-0280a2c24998",
+      "name": "Extract Failed Test Details"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "04dad9f6-8aa9-46a7-ad4c-d5fbf55748f8",
+              "leftValue": "={{ $json.execution_status }}",
+              "rightValue": "=FAILED",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        48,
+        -112
+      ],
+      "id": "cb8367fc-3098-4651-b568-fd0d86c8bb61",
+      "name": "If"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Run Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Tests": {
+      "main": [
+        [
+          {
+            "node": "Download QA Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download QA Report": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Failed Test Details": {
+      "main": [
+        []
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Extract Failed Test Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "0d891a1d-82f2-4db1-85ab-f6a56c39137c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "65c60f498d6c05d3a55431f4673ba336ec498029a0fe62ed719027933f104a26"
+  },
+  "nodeGroups": [],
+  "id": "lwVzk15Q9lGEEBXU",
+  "tags": []
+}
