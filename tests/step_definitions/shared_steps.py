@@ -13,5 +13,4 @@ def login(login_actions, user_type):
 
 @then("I Should See The Inventory Page")
 def verify_inventory_page(login_page):
-    assert login_page.verify_inventory_page(), \
-        "Inventory page was not displayed after login."
+    assert login_page.verify_inventory_page(), "Inventory page was not displayed after login."
