@@ -22,13 +22,14 @@ from flask import Flask, jsonify, make_response, request, send_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from automation_services.pdf_report_generator import generate_pdf
+from service.pdf_report_generator import generate_pdf
 
 app = Flask(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
-REPORTS_DIR  = PROJECT_ROOT / "reports"
-LOGS_DIR     = PROJECT_ROOT / "logs"
+OUTPUT_DIR   = PROJECT_ROOT / "output"
+REPORTS_DIR  = OUTPUT_DIR / "reports"
+LOGS_DIR     = OUTPUT_DIR / "logs"
 
 # ---------------------------------------------------------------------------
 # File logger — writes to logs/flask.log
@@ -254,7 +255,7 @@ def _run_ai_analysis(test_id: str, error: str, logs: list) -> str:
     has optional dependencies missing.
     """
     try:
-        from agents.ai_failure_agent import AIFailureAgent
+        from ai.ai_failure_agent import AIFailureAgent
         agent = AIFailureAgent()
         return agent.analyse({
             "test":  test_id,
@@ -304,6 +305,7 @@ def download_latest_report():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     port = int(os.environ.get("FLASK_PORT", 5001))
     app.run(

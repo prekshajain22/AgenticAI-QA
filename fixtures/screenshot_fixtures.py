@@ -9,7 +9,7 @@ def capture_screenshot_on_failure(page, request):
     yield
 
     if hasattr(request.node, "rep_call") and request.node.rep_call.failed:
-        screenshot_dir = "screenshots"
+        screenshot_dir = "output/screenshots"
 
         os.makedirs(screenshot_dir, exist_ok=True)
 
