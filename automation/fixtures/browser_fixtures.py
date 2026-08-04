@@ -1,13 +1,14 @@
 import pytest
 from playwright.sync_api import Playwright
 
-from config.settings import DEFAULT_NAVIGATION_TIMEOUT, DEFAULT_TIMEOUT, HEADLESS, SLOW_MO
+from config.settings import BROWSER, DEFAULT_NAVIGATION_TIMEOUT, DEFAULT_TIMEOUT, HEADLESS, SLOW_MO
 
 
 @pytest.fixture(scope="function")
 def page(playwright: Playwright):
-
-    browser = playwright.chromium.launch(headless=HEADLESS, slow_mo=SLOW_MO)
+    # Respects BROWSER env var: chromium (default), firefox, or webkit
+    browser_type = getattr(playwright, BROWSER)
+    browser = browser_type.launch(headless=HEADLESS, slow_mo=SLOW_MO)
 
     context = browser.new_context()
     page = context.new_page()

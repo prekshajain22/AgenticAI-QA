@@ -18,4 +18,6 @@ def verify_inventory_page(login_page):
 
 @then("I Should See A Login Error")
 def verify_login_error(login_page):
-    assert login_page.verify_login_error(), "Login error banner was not displayed for invalid credentials."
+    assert login_page.verify_login_error(), (
+        "Login error banner was not displayed for invalid credentials."
+    )

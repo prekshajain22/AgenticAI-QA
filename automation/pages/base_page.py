@@ -1,6 +1,6 @@
-from config.settings import DEFAULT_TIMEOUT
 from automation.utils.logger import get_logger
 from automation.utils.waits import Waits
+from config.settings import DEFAULT_TIMEOUT
 
 
 class BasePage:

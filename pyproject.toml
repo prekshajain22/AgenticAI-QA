@@ -1,3 +1,36 @@
+[project]
+name = "agenticai-qa"
+version = "0.1.0"
+description = "Playwright + Pytest BDD QA automation framework with AI failure analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+# Runtime dependencies are pinned in requirements.txt.
+# For an editable install: pip install -e .
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-bdd",
+    "pytest-html",
+    "pytest-playwright",
+    "pytest-rerunfailures",
+    "pytest-xdist",
+    "pytest-json-report",
+    "python-dotenv",
+    "flask",
+    "reportlab",
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai*", "automation*", "config*", "service*"]
+
 [tool.ruff]
 line-length = 100
 exclude = [
@@ -19,3 +52,4 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "conftest.py" = ["E402"]
+"tests/unit/*" = ["S101"]

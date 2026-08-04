@@ -1,7 +1,7 @@
 """
 Flask test runner — synchronous execution.
 
-POST /run-tests  → runs pytest, AI analysis, returns full JSON result (blocks until done)
+POST /run-tests  → runs pytest + AI analysis, returns full JSON result (blocks until done)
 GET  /health     → liveness probe
 GET  /download-report → download the most recently generated PDF report
 """
@@ -27,14 +27,22 @@ from service.pdf_report_generator import generate_pdf
 app = Flask(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
-OUTPUT_DIR   = PROJECT_ROOT / "output"
-REPORTS_DIR  = OUTPUT_DIR / "reports"
-LOGS_DIR     = OUTPUT_DIR / "logs"
+OUTPUT_DIR = PROJECT_ROOT / "output"
+REPORTS_DIR = OUTPUT_DIR / "reports"
+LOGS_DIR = OUTPUT_DIR / "logs"
 
 # ---------------------------------------------------------------------------
-# File logger — writes to logs/flask.log
+# Ensure output directories exist at import time (not just under __main__)
+# so anything that imports this module — tests, MCP servers, etc. — never
+# hits a FileNotFoundError before the first request.
 # ---------------------------------------------------------------------------
-LOGS_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+# ---------------------------------------------------------------------------
+# File logger — writes to output/logs/flask.log
+# ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -55,9 +63,9 @@ _FLASK_SECRET = os.environ.get("FLASK_SECRET", "")
 def _require_secret():
     """Reject requests that don't carry the correct X-Secret header.
 
-    If FLASK_SECRET is not set the check is skipped so local dev/test
-    works without configuration.  In production set FLASK_SECRET and
-    pass the same value from n8n via an X-Secret header.
+    If FLASK_SECRET is not set the check is skipped — local dev works
+    without configuration.  In production set FLASK_SECRET and pass the
+    same value from n8n via an X-Secret header.
     """
     if not _FLASK_SECRET:
         return
@@ -68,13 +76,14 @@ def _require_secret():
 # ---------------------------------------------------------------------------
 # Latest-report store — lets /download-report work after any run
 # ---------------------------------------------------------------------------
-_latest_pdf: dict | None = None   # {"path": Path, "run_id": str}
+_latest_pdf: dict | None = None
 _latest_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
 # Route: POST /run-tests  (synchronous — blocks until tests + analysis done)
 # ---------------------------------------------------------------------------
+
 
 @app.route("/run-tests", methods=["POST"])
 def run_tests():
@@ -84,8 +93,9 @@ def run_tests():
     The endpoint blocks until:
       1. pytest finishes
       2. the result JSON is parsed
-      3. a PDF report is generated
-      4. AI failure analysis is applied to every failed test
+      3. ReportAnalysisAgent enriches every failure with classification,
+         recommendation, root-cause, and AI analysis
+      4. a PDF report is generated
 
     Response 200:
         {
@@ -93,16 +103,17 @@ def run_tests():
             "execution_status": "PASSED" | "FAILED",
             "summary":          { total, passed, failed, duration },
             "all_tests":        [...],
-            "failed_tests":     [...],   # each has "ai_analysis" when failed
+            "failed_tests":     [...],   # each has classification, recommendation, ai_analysis
+            "root_cause":       "...",
             "email_message":    "...",
-            "pdf_report":       "reports/<run_id>/QA_Execution_Report.pdf"
+            "pdf_report":       "output/reports/<run_id>/QA_Execution_Report.pdf"
         }
 
     Response 500 on internal error.
     """
     global _latest_pdf
 
-    run_id  = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
     run_dir = REPORTS_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -115,7 +126,10 @@ def run_tests():
     try:
         proc = subprocess.run(
             [
-                sys.executable, "-m", "pytest", "-v",
+                sys.executable,
+                "-m",
+                "pytest",
+                "-v",
                 "--json-report",
                 f"--json-report-file={result_file}",
                 f"--html={html_report}",
@@ -133,38 +147,55 @@ def run_tests():
         with open(result_file, encoding="utf-8") as fh:
             pytest_data = json.load(fh)
 
+        # ── Run ReportAnalysisAgent for enriched per-failure analysis ─────
+        agent_lookup: dict = {}
+        root_cause: str = ""
+        try:
+            from ai.report_analysis_agent import ReportAnalysisAgent
+
+            agent = ReportAnalysisAgent(str(result_file))
+            full_analysis = agent.generate_analysis()
+            root_cause = full_analysis.get("root_cause", "")
+            for failure in full_analysis.get("failures", []):
+                agent_lookup[failure["test"]] = failure
+        except Exception as agent_err:
+            log.warning("[run:%s] ReportAnalysisAgent skipped: %s", run_id, agent_err)
+
         # ── Summary ──────────────────────────────────────────────────────
         raw = pytest_data.get("summary", {})
         summary = {
-            "total":    raw.get("total",  0),
-            "passed":   raw.get("passed", 0),
-            "failed":   raw.get("failed", 0),
+            "total": raw.get("total", 0),
+            "passed": raw.get("passed", 0),
+            "failed": raw.get("failed", 0),
             "duration": round(pytest_data.get("duration", 0), 2),
         }
 
         # ── Per-test breakdown ───────────────────────────────────────────
         failed_tests: list = []
-        all_tests:    list = []
+        all_tests: list = []
 
         for item in pytest_data.get("tests", []):
             node_id = item.get("nodeid", "")
             test_fn = node_id.split("::")[-1]
-            name    = test_fn.replace("test_", "").replace("_", " ").title()
+            name = test_fn.replace("test_", "").replace("_", " ").title()
             outcome = item.get("outcome", "unknown").upper()
 
-            screenshot_path   = f"screenshots/{test_fn}.png"
+            # Screenshots are now saved to output/screenshots/
+            screenshot_path = f"output/screenshots/{test_fn}.png"
             screenshot_exists = (PROJECT_ROOT / screenshot_path).exists()
 
-            all_tests.append({
-                "name":       name,
-                "status":     outcome,
-                "screenshot": screenshot_path if screenshot_exists else None,
-            })
+            all_tests.append(
+                {
+                    "name": name,
+                    "status": outcome,
+                    "screenshot": screenshot_path if screenshot_exists else None,
+                }
+            )
 
             if outcome == "FAILED":
-                call     = item.get("call", {})
+                call = item.get("call", {})
                 longrepr = str(call.get("longrepr", ""))
-                crash    = call.get("crash", {})
+                crash = call.get("crash", {})
 
                 crash_message = crash.get("message", "").strip()
                 reason = crash_message.split("\n")[0].strip() or "Test failed"
@@ -172,62 +203,61 @@ def run_tests():
                 failing_step = None
                 m = re.search(
                     r'@(given|when|then)\s*\(\s*["\'](.+?)["\']\s*\)',
-                    longrepr, re.IGNORECASE,
+                    longrepr,
+                    re.IGNORECASE,
                 )
                 if m:
                     failing_step = f"{m.group(1).capitalize()}: {m.group(2)}"
 
-                execution_log = [
-                    e.get("msg", "")
-                    for e in call.get("log", [])
-                    if e.get("msg")
-                ]
+                execution_log = [e.get("msg", "") for e in call.get("log", []) if e.get("msg")]
 
-                # ── AI analysis ──────────────────────────────────────────
-                ai_analysis = _run_ai_analysis(
-                    node_id, crash_message, execution_log
+                # Pull enriched analysis from ReportAnalysisAgent
+                enriched = agent_lookup.get(node_id, {})
+
+                failed_tests.append(
+                    {
+                        "name": name,
+                        "status": outcome,
+                        "failing_step": failing_step,
+                        "crash_message": crash_message,
+                        "reason": reason,
+                        "execution_log": execution_log,
+                        "jira_summary": f"Automation Failure - {name}",
+                        "screenshot": screenshot_path if screenshot_exists else None,
+                        "classification": enriched.get(
+                            "classification", "Unknown — Requires Investigation"
+                        ),
+                        "recommendation": enriched.get(
+                            "recommendation", "Review assertion failure and application behaviour."
+                        ),
+                        "ai_analysis": enriched.get("ai_analysis", "AI analysis unavailable."),
+                    }
                 )
 
-                failed_tests.append({
-                    "name":          name,
-                    "status":        outcome,
-                    "failing_step":  failing_step,
-                    "crash_message": crash_message,
-                    "reason":        reason,
-                    "execution_log": execution_log,
-                    "jira_summary":  f"Automation Failure - {name}",
-                    "screenshot":    screenshot_path if screenshot_exists else None,
-                    "ai_analysis":   ai_analysis,
-                })
-
         passed = proc.returncode == 0
-        if passed:
-            email_message = (
-                f"QA Automation execution completed successfully. "
-                f"All {summary['total']} tests passed."
-            )
-        else:
-            email_message = (
-                f"QA Automation execution completed with "
-                f"{summary['failed']} failed test(s)."
-            )
+        email_message = (
+            f"QA Automation execution completed successfully. All {summary['total']} tests passed."
+            if passed
+            else f"QA Automation execution completed with {summary['failed']} failed test(s)."
+        )
 
         payload = {
-            "run_id":           run_id,
+            "run_id": run_id,
             "execution_status": "PASSED" if passed else "FAILED",
-            "started_at":       started_at,
-            "finished_at":      datetime.now(timezone.utc).isoformat(),
-            "email_message":    email_message,
-            "summary":          summary,
-            "failed_tests":     failed_tests,
-            "all_tests":        all_tests,
-            "html_report":      str(html_report.relative_to(PROJECT_ROOT)),
+            "started_at": started_at,
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "email_message": email_message,
+            "root_cause": root_cause,
+            "summary": summary,
+            "failed_tests": failed_tests,
+            "all_tests": all_tests,
+            "html_report": str(html_report.relative_to(PROJECT_ROOT)),
         }
 
         # ── PDF ──────────────────────────────────────────────────────────
         pdf_path = run_dir / "QA_Execution_Report.pdf"
         try:
-            generate_pdf(payload, pdf_path)
+            generate_pdf(payload, pdf_path, project_root=PROJECT_ROOT)
             payload["pdf_report"] = str(pdf_path.relative_to(PROJECT_ROOT))
             log.info("[run:%s] PDF: %s", run_id, pdf_path)
             with _latest_lock:
@@ -248,28 +278,10 @@ def run_tests():
         )
 
 
-def _run_ai_analysis(test_id: str, error: str, logs: list) -> str:
-    """Call ReportAnalysisAgent's AI layer for a single failure.
-
-    Imports lazily so the Flask service starts even if the agents package
-    has optional dependencies missing.
-    """
-    try:
-        from ai.ai_failure_agent import AIFailureAgent
-        agent = AIFailureAgent()
-        return agent.analyse({
-            "test":  test_id,
-            "error": error,
-            "logs":  logs,
-        })
-    except Exception as exc:
-        log.warning("AI analysis skipped: %s", exc)
-        return "AI analysis unavailable."
-
-
 # ---------------------------------------------------------------------------
 # Route: GET /health
 # ---------------------------------------------------------------------------
+
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -278,8 +290,9 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# Route: GET /download-report  (backwards compat)
+# Route: GET /download-report
 # ---------------------------------------------------------------------------
+
 
 @app.route("/download-report", methods=["GET"])
 def download_latest_report():
@@ -305,8 +318,6 @@ def download_latest_report():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     port = int(os.environ.get("FLASK_PORT", 5001))
     app.run(
         host="0.0.0.0",

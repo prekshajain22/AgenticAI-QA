@@ -1,5 +1,4 @@
 class AIFailureAgent:
-
     def analyse(self, failure):
 
         prompt = f"""

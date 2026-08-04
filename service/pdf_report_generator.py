@@ -21,7 +21,7 @@ GREY_COLOR = colors.HexColor("#555555")
 def generate_pdf(data, output_path=None, project_root=None):
 
     if output_path is None:
-        output_path = Path("reports/QA_Execution_Report.pdf")
+        output_path = Path("output/reports/QA_Execution_Report.pdf")
 
     output_path = Path(output_path)
 

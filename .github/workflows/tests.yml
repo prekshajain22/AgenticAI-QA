@@ -43,11 +43,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-report
-          path: reports/
+          path: output/reports/
 
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: screenshots/
+          path: output/screenshots/

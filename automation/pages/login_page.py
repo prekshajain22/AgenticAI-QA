@@ -1,9 +1,9 @@
 from automation.components.button import Button
-from automation.components.text_input import TextInput
 from automation.components.text_element import Label
-from config.settings import BASE_URL
+from automation.components.text_input import TextInput
 from automation.locators.login_locators import LoginLocators
 from automation.pages.base_page import BasePage
+from config.settings import BASE_URL
 
 
 class LoginPage(BasePage):

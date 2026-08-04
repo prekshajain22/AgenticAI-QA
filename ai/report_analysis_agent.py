@@ -18,10 +18,7 @@ class ReportAnalysisAgent:
             "Total": summary["total"],
             "Passed": summary["passed"],
             "Failed": summary["failed"],
-            "Pass Rate": round(
-                summary["passed"] / summary["total"] * 100,
-                2
-            )
+            "Pass Rate": round(summary["passed"] / summary["total"] * 100, 2),
         }
 
     def failed_tests(self):
@@ -41,44 +38,28 @@ class ReportAnalysisAgent:
         analysis = {
             "execution_summary": self.execution_summary(),
             "failures": [],
-            "root_cause": self.root_cause()
+            "root_cause": self.root_cause(),
         }
 
         for test in self.report.get("tests", []):
             if test["outcome"] == "failed":
-
                 failure_data = {
                     "test": test["nodeid"],
-                    "error": self.clean_error(
-                        test["call"]["crash"]["message"]
-                    ),
-                    "logs": [
-                        log["msg"]
-                        for log in test["call"].get("log", [])
-                    ]
+                    "error": self.clean_error(test["call"]["crash"]["message"]),
+                    "logs": [log["msg"] for log in test["call"].get("log", [])],
                 }
 
-                ai_analysis = self.ai_agent.analyse(
-                    failure_data
-                )
+                ai_analysis = self.ai_agent.analyse(failure_data)
 
                 failure = {
                     **failure_data,
-
-                    "classification": self.classify_failure(
-                        test["call"]["crash"]["message"]
-                    ),
-
+                    "classification": self.classify_failure(test["call"]["crash"]["message"]),
                     "location": {
                         "file": test["call"]["crash"]["path"],
-                        "line": test["call"]["crash"]["lineno"]
+                        "line": test["call"]["crash"]["lineno"],
                     },
-
-                    "recommendation": self.analyse_failure(
-                        test["call"]["crash"]["message"]
-                    ),
-
-                    "ai_analysis": ai_analysis
+                    "recommendation": self.analyse_failure(test["call"]["crash"]["message"]),
+                    "ai_analysis": ai_analysis,
                 }
 
                 analysis["failures"].append(failure)
@@ -88,15 +69,14 @@ class ReportAnalysisAgent:
     def analyse_failures(self):
         analysis = []
         for failure in self.failed_tests():
-            analysis.append({
-            "Test": failure["nodeid"],
-            "Message":
-                self.clean_error(failure["call"]["crash"]["message"]),
-            "File":
-                failure["call"]["crash"]["path"],
-            "Line":
-                failure["call"]["crash"]["lineno"]
-        })
+            analysis.append(
+                {
+                    "Test": failure["nodeid"],
+                    "Message": self.clean_error(failure["call"]["crash"]["message"]),
+                    "File": failure["call"]["crash"]["path"],
+                    "Line": failure["call"]["crash"]["lineno"],
+                }
+            )
 
         return analysis
 
@@ -129,19 +109,13 @@ class ReportAnalysisAgent:
             message = failure["call"]["crash"]["message"]
 
             if "AssertionError" in message:
-                suggestions.append(
-                    "Verify expected page or element before assertion."
-                )
+                suggestions.append("Verify expected page or element before assertion.")
 
             if "Timeout" in message:
-                suggestions.append(
-                    "Increase timeout or investigate slow page load."
-                )
+                suggestions.append("Increase timeout or investigate slow page load.")
 
             if "Locator" in message:
-                suggestions.append(
-                    "Review locator stability and uniqueness."
-                )
+                suggestions.append("Review locator stability and uniqueness.")
 
         return suggestions
 
@@ -150,7 +124,7 @@ class ReportAnalysisAgent:
             return (
                 "Negative login scenario appears to use a positive login "
                 "assertion. Validate error message instead of inventory page."
-                )
+            )
         return "Review assertion failure and application behaviour."
 
     def classify_failure(self, error):
@@ -169,20 +143,19 @@ class ReportAnalysisAgent:
         analysis = self.generate_analysis()
 
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(
-                analysis,
-                f,
-                indent=4
-            )
-    
+            json.dump(analysis, f, indent=4)
+
+
 if __name__ == "__main__":
+    import glob
 
-    agent = ReportAnalysisAgent(
-        "reports/result.json"
-    )
-
-    agent.save_analysis(
-        "reports/ai_analysis.json"
-    )
-
-    print("AI analysis generated successfully")
+    # Find the most recent result.json under output/reports/
+    results = sorted(glob.glob("output/reports/*/result.json"))
+    if not results:
+        print("No result.json found. Run tests via service/test_runner.py first.")
+    else:
+        latest = results[-1]
+        agent = ReportAnalysisAgent(latest)
+        out = latest.replace("result.json", "ai_analysis.json")
+        agent.save_analysis(out)
+        print(f"AI analysis written to {out}")
