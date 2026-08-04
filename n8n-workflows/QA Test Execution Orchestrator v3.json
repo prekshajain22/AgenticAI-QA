@@ -165,8 +165,8 @@
     },
     {
       "parameters": {
-        "fromEmail": "prekshajain22@gmail.com",
-        "toEmail": "prekjain@emeal.nttdata.com",
+        "fromEmail": "={{ $env.QA_FROM_EMAIL }}",
+        "toEmail": "={{ $env.QA_TO_EMAIL }}",
         "subject": "=QA Automation Execution - {{$node[\"Poll Until Complete\"].json[\"execution_status\"] || \"Unknown\"}}",
         "html": "=QA Automation Execution Completed<br><br><b>Status:</b><br>{{$node[\"Poll Until Complete\"].json[\"execution_status\"]}}<br><br><b>Summary</b><br>Total: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"total\"]}}<br>Passed: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"passed\"]}}<br>Failed: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"failed\"]}}<br>Duration: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"duration\"]}} seconds<br><br><b>Failed Tests</b><br>{{$node[\"Poll Until Complete\"].json[\"failed_tests\"].length ? $node[\"Poll Until Complete\"].json[\"failed_tests\"].map(t => `<hr><b>Test:</b> ${t.name}<br><b>Failing Step:</b> ${t.failing_step}<br><b>Error:</b> ${t.reason||t.crash_message}<br><b>Screenshot:</b> ${t.screenshot}<br>`).join(\"\") : \"None \ud83c\udf89\"}}<br><br>Report attached.",
         "options": {"fileAttachments": "data"}

@@ -14,17 +14,6 @@ if not BASE_URL:
 
 DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", 5000))
 DEFAULT_NAVIGATION_TIMEOUT = int(os.getenv("DEFAULT_NAVIGATION_TIMEOUT", 10000))
-
-# ----------------------------
-# AI Test Orchestrator Metadata
-# ----------------------------
-
-PRODUCT_NAME = "AI Test Orchestrator"
-PRODUCT_VERSION = "1.0.0"
-PRODUCT_TAGLINE = "Intelligent QA Execution, Reporting & Automation"
-
-AUTHOR = "Preksha Jain"
-COMPANY = "Personal Portfolio"
 FRAMEWORK = os.getenv("FRAMEWORK", "Playwright")
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "QA")

@@ -1,6 +1,6 @@
 from components.button import Button
 from components.text_input import TextInput
-from components.textElement import Label
+from components.text_element import Label
 from config.settings import BASE_URL
 from locators.login_locators import LoginLocators
 from pages.base_page import BasePage

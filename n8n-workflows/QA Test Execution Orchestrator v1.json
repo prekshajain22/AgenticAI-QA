@@ -34,8 +34,8 @@
     },
     {
       "parameters": {
-        "fromEmail": "prekshajain22@gmail.com",
-        "toEmail": "prekjain@emeal.nttdata.com",
+        "fromEmail": "={{ $env.QA_FROM_EMAIL }}",
+        "toEmail": "={{ $env.QA_TO_EMAIL }}",
         "subject": "==QA Automation Execution - {{$node[\"Run Tests\"].json.execution_status}}",
         "html": "==QA Automation Execution Completed\n\n<br><br>\n\n<b>Status:</b><br>\n{{$node[\"Run Tests\"].json.execution_status}}\n\n<br><br>\n\n<b>Summary</b><br>\n\nTotal Tests:\n{{$node[\"Run Tests\"].json.summary.total}}<br>\n\nPassed:\n{{$node[\"Run Tests\"].json.summary.passed}}<br>\n\nFailed:\n{{$node[\"Run Tests\"].json.summary.failed}}<br>\n\nDuration:\n{{$node[\"Run Tests\"].json.summary.duration}} seconds\n\n<br><br>\n\n<b>Failed Tests</b><br>\n\n{{\n$node[\"Run Tests\"].json.failed_tests.length\n? $node[\"Run Tests\"].json.failed_tests.map(test => `\n<hr>\n<b>Test:</b> ${test.name}<br>\n<b>Failing Step:</b> ${test.failing_step}<br>\n<b>Error:</b> ${test.error}<br>\n<b>Screenshot:</b> ${test.screenshot}<br>\n`).join(\"\")\n: \"None 🎉\"\n}}\n\n<br><br>\n\nReport attached.",
         "options": {

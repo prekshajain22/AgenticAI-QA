@@ -261,7 +261,7 @@ def _execute_tests(job_id: str) -> None:
 # Flask routes
 # ---------------------------------------------------------------------------
 
-@app.route("/run-tests", methods=["GET", "POST"])
+@app.route("/run-tests", methods=["POST"])
 def run_tests():
     """
     Enqueue a test run and return immediately.
@@ -410,6 +410,12 @@ def download_job_report(job_id: str):
     )
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    """Liveness probe — returns 200 OK when the service is up."""
+    return jsonify({"status": "ok"}), 200
+
+
 @app.route("/download-report", methods=["GET"])
 def download_latest_report():
     """
@@ -445,7 +451,7 @@ def download_latest_report():
 if __name__ == "__main__":
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     app.run(
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=5000,
         debug=False,
         use_reloader=False,

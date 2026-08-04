@@ -1,5 +1,5 @@
 from components.button import Button
-from components.textElement import Label
+from components.text_element import Label
 from locators.inventory_locators import InventoryLocators
 from pages.base_page import BasePage
 
