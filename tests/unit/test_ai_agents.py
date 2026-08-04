@@ -5,8 +5,8 @@ from unittest.mock import mock_open, patch
 
 import pytest
 
-from ai.ai_failure_agent import AIFailureAgent
-from ai.report_analysis_agent import ReportAnalysisAgent
+from agents.ai_failure_agent import AIFailureAgent
+from agents.report_analysis_agent import ReportAnalysisAgent
 
 # ---------------------------------------------------------------------------
 # Helpers

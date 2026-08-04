@@ -151,7 +151,7 @@ def run_tests():
         agent_lookup: dict = {}
         root_cause: str = ""
         try:
-            from ai.report_analysis_agent import ReportAnalysisAgent
+            from agents.report_analysis_agent import ReportAnalysisAgent
 
             agent = ReportAnalysisAgent(str(result_file))
             full_analysis = agent.generate_analysis()

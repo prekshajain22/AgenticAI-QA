@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from ai.ai_failure_agent import AIFailureAgent
+from agents.ai_failure_agent import AIFailureAgent
 
 
 class ReportAnalysisAgent:
