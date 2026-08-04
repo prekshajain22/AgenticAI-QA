@@ -1,0 +1,249 @@
+{
+  "name": "QA Test Execution Orchestrator v3",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-416, -288],
+      "id": "498d11ee-5c26-4422-bcb9-4735a257fe4c",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.containers.internal:5000/run-tests",
+        "options": {"response": {"response": {"responseFormat": "json"}}}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-240, -288],
+      "id": "959f2358-ed6b-490a-87e9-5330dd8332d4",
+      "name": "Run Tests"
+    },
+    {
+      "parameters": {
+        "jsCode": "const jobId=$input.first().json.job_id;\nconst base='http://host.containers.internal:5000';\nconst sleep=ms=>new Promise(r=>setTimeout(r,ms));\nlet elapsed=0,result;\nwhile(elapsed<600000){\n  const res=await fetch(`${base}/jobs/${jobId}`);\n  result=await res.json();\n  if(result.status==='completed'||result.status==='failed') break;\n  await sleep(5000);\n  elapsed+=5000;\n}\nif(!result||(result.status!=='completed'&&result.status!=='failed'))\n  throw new Error(`Timed out waiting for job ${jobId}`);\nif(result.status==='failed')\n  throw new Error(`Job ${jobId} failed: ${result.error}`);\nresult.job_id=jobId;\nreturn [{json:result}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-60, -288],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Poll Until Complete"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const d=$json;\nreturn {json:{execution_time:new Date().toLocaleString(),execution_status:d.execution_status,total_tests:d.summary.total,passed_tests:d.summary.passed,failed_tests:d.summary.failed,pass_percentage:((d.summary.passed/d.summary.total)*100).toFixed(2),duration:d.summary.duration,jira_required:d.summary.failed>0,pdf_report:d.pdf_report,html_report:d.html_report}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, -464],
+      "id": "17bc4285-7cbc-4eaa-9fda-f9e6f22f1c54",
+      "name": "Prepare Dashboard Metrics"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "beb27b24-d1ee-4ece-a1c4-6aa9f4a0ffe1", "name": "Execution", "value": "={{$json.execution_time}}", "type": "string"},
+            {"id": "e93c15fb-21ea-4f11-9942-c37e340a80d5", "name": "Status", "value": "={{$json.execution_status}}", "type": "string"},
+            {"id": "60673c19-68f0-405f-a5f3-89af1ee0848a", "name": "Total", "value": "={{$json.total_tests}}", "type": "string"},
+            {"id": "9dcd5910-d803-4867-b6c9-450c0e789fe7", "name": "Passed", "value": "={{$json.passed_tests}}", "type": "string"},
+            {"id": "bd95b078-0893-43a5-b953-4a4257203ede", "name": "Failed", "value": "={{$json.failed_tests}}", "type": "string"},
+            {"id": "44289e52-9f3b-436e-b4a2-35495bee842d", "name": "Pass %", "value": "={{$json.pass_percentage}}", "type": "string"},
+            {"id": "c870d29d-f69e-4a8a-8ecd-074de8260159", "name": "Duration", "value": "={{$json.duration}} sec", "type": "string"},
+            {"id": "98439de0-a79b-4bf5-8d40-a5cd35f4cacd", "name": "Jira", "value": "={{$json.jira_required}}", "type": "string"}
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [320, -464],
+      "id": "d26e2850-12a7-44f2-b215-624c34618075",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 3},
+          "conditions": [{"id": "04dad9f6-8aa9-46a7-ad4c-d5fbf55748f8", "leftValue": "={{ $json.execution_status }}", "rightValue": "=PASSED", "operator": {"type": "string", "operation": "equals"}}],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [160, -288],
+      "id": "974f9c3e-5e06-4eb7-b38a-87e8c867a5ee",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data=$input.first().json;\nconst failedTests=data.failed_tests||[];\nif(failedTests.length===0) return [{json:{message:'No failed tests found'}}];\nconst f=failedTests[0];\nreturn [{json:{issueType:'Bug',project:'QA-AUTOMATION',summary:`Automation Failure - ${f.name}`,description:`QA Automation Failure\\n\\nTest: ${f.name}\\nStep: ${f.failing_step}\\nReason: ${f.reason||f.crash_message||'Unknown'}\\nScreenshot: ${f.screenshot||'N/A'}\\n\\nTotal: ${data.summary.total} Passed: ${data.summary.passed} Failed: ${data.summary.failed} Duration: ${data.summary.duration}s`}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, -176],
+      "id": "482b2536-1f63-4d6c-a4a9-c4f452071fb9",
+      "name": "Prepare Jira Payload"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const existingBugs=['Automation Failure - Login With Invalid Credentials Should Fail And Capture Screenshot'];\nreturn {json:{...$json,bug_exists:existingBugs.includes($json.summary)}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, -176],
+      "id": "396e3afe-d0c1-4f7e-979f-624a3e650815",
+      "name": "Check Existing Bug"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 3},
+          "conditions": [{"id": "ac664c8c-9816-464b-8f86-10572317fd0d", "leftValue": "=={{ Boolean($json.bug_exists) }}", "rightValue": "", "operator": {"type": "boolean", "operation": "true", "singleValue": true}}],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [640, -176],
+      "id": "ff8e06c5-673d-4470-b09c-1a1e16d8045e",
+      "name": "bug_exists"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "2e1b0986-a6bb-48cf-8105-6e9c41e78f05", "name": "jira_status", "value": "CREATED", "type": "string"},
+            {"id": "eedfc18e-4051-49bf-9754-4b0c7ace1428", "name": "message", "value": "Mock Jira bug created successfully", "type": "string"}
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [800, 0],
+      "id": "89ad5bbf-79cd-49d5-bbd3-cb862b0844a6",
+      "name": "Mock Jira - Create Bug"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {"id": "d210aaf3-f9c9-45b5-805b-578593f99e4b", "name": "jira_status", "value": "UPDATED", "type": "string"},
+            {"id": "931c6458-32b4-4287-8c9f-3312f0ffd218", "name": "message", "value": "Existing Jira updated", "type": "string"},
+            {"id": "c1fd4d85-23a2-4242-9a58-f56deae22da7", "name": "jira_key", "value": "QA-101", "type": "string"}
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [800, -256],
+      "id": "ab33b44f-8b6d-4384-b4d7-4a983540d732",
+      "name": "Mock Update Existing Jira"
+    },
+    {
+      "parameters": {
+        "url": "=http://host.containers.internal:5000/jobs/{{$node[\"Poll Until Complete\"].json[\"job_id\"]}}/download-report",
+        "options": {"response": {"response": {"responseFormat": "file"}}}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1120, -400],
+      "id": "670abc6e-207d-45d8-8c92-9d9dbb8fd64f",
+      "name": "Download QA Report"
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "=QA Automation Execution - {{$node[\"Poll Until Complete\"].json[\"execution_status\"] || \"Unknown\"}}",
+        "html": "=QA Automation Execution Completed<br><br><b>Status:</b><br>{{$node[\"Poll Until Complete\"].json[\"execution_status\"]}}<br><br><b>Summary</b><br>Total: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"total\"]}}<br>Passed: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"passed\"]}}<br>Failed: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"failed\"]}}<br>Duration: {{$node[\"Poll Until Complete\"].json[\"summary\"][\"duration\"]}} seconds<br><br><b>Failed Tests</b><br>{{$node[\"Poll Until Complete\"].json[\"failed_tests\"].length ? $node[\"Poll Until Complete\"].json[\"failed_tests\"].map(t => `<hr><b>Test:</b> ${t.name}<br><b>Failing Step:</b> ${t.failing_step}<br><b>Error:</b> ${t.reason||t.crash_message}<br><b>Screenshot:</b> ${t.screenshot}<br>`).join(\"\") : \"None \ud83c\udf89\"}}<br><br>Report attached.",
+        "options": {"fileAttachments": "data"}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1280, -416],
+      "id": "e336efda-c1f0-45a8-bd6b-3f896c6da305",
+      "name": "Send an Email",
+      "credentials": {
+        "smtp": {"id": "AApLdx6JqlR3R3gN", "name": "SMTP account"}
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [[{"node": "Run Tests", "type": "main", "index": 0}]]
+    },
+    "Run Tests": {
+      "main": [[{"node": "Poll Until Complete", "type": "main", "index": 0}]]
+    },
+    "Poll Until Complete": {
+      "main": [[
+        {"node": "Prepare Dashboard Metrics", "type": "main", "index": 0},
+        {"node": "If", "type": "main", "index": 0}
+      ]]
+    },
+    "Prepare Dashboard Metrics": {
+      "main": [[{"node": "Edit Fields", "type": "main", "index": 0}]]
+    },
+    "Edit Fields": {
+      "main": [[]]
+    },
+    "If": {
+      "main": [
+        [{"node": "Download QA Report", "type": "main", "index": 0}],
+        [{"node": "Prepare Jira Payload", "type": "main", "index": 0}]
+      ]
+    },
+    "Prepare Jira Payload": {
+      "main": [[{"node": "Check Existing Bug", "type": "main", "index": 0}]]
+    },
+    "Check Existing Bug": {
+      "main": [[{"node": "bug_exists", "type": "main", "index": 0}]]
+    },
+    "bug_exists": {
+      "main": [
+        [{"node": "Mock Update Existing Jira", "type": "main", "index": 0}],
+        [{"node": "Mock Jira - Create Bug", "type": "main", "index": 0}]
+      ]
+    },
+    "Mock Update Existing Jira": {
+      "main": [[{"node": "Download QA Report", "type": "main", "index": 0}]]
+    },
+    "Mock Jira - Create Bug": {
+      "main": [[{"node": "Download QA Report", "type": "main", "index": 0}]]
+    },
+    "Download QA Report": {
+      "main": [[{"node": "Send an Email", "type": "main", "index": 0}]]
+    },
+    "Send an Email": {
+      "main": [[]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c3d4e5f6-a7b8-9012-cdef-345678901234",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "65c60f498d6c05d3a55431f4673ba336ec498029a0fe62ed719027933f104a26"
+  },
+  "nodeGroups": [],
+  "id": "v3QAOrchestrator",
+  "tags": []
+}

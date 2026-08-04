@@ -1,8 +1,38 @@
+"""
+Flask test runner with job queue, concurrency control, and execution history.
+
+Architecture
+------------
+  POST /run-tests                     → enqueue a job, return 202 + {"job_id": "..."}
+  GET  /jobs/<job_id>                 → poll status; returns full result when done
+  GET  /jobs                          → execution history (all jobs, newest first)
+  GET  /jobs/<job_id>/download-report → download per-job PDF
+  GET  /download-report               → download latest completed-job PDF (n8n compat)
+
+Concurrency contract
+--------------------
+  ThreadPoolExecutor(max_workers=1) serialises every pytest process so that only
+  one runs at a time — no two subprocesses compete for the same filesystem paths.
+
+  Each job writes exclusively to   reports/jobs/<job_id>/
+    • result.json
+    • test_report.html
+    • QA_Execution_Report.pdf
+  so raising max_workers later introduces no shared-file collisions.
+
+  A threading.Lock guards every read/write of the in-memory _jobs registry.
+"""
+
 import json
+import logging
 import re
 import subprocess
 import sys
+import threading
 import traceback
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, make_response, send_file
@@ -14,31 +44,89 @@ from automation_services.pdf_report_generator import generate_pdf
 app = Flask(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
+JOBS_DIR = PROJECT_ROOT / "reports" / "jobs"
+LOGS_DIR = PROJECT_ROOT / "logs"
 
-REPORT_DIR = PROJECT_ROOT / "reports"
+# ---------------------------------------------------------------------------
+# File logger — writes to logs/flask.log
+# ---------------------------------------------------------------------------
+LOGS_DIR.mkdir(exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOGS_DIR / "flask.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+log = logging.getLogger(__name__)
 
-RESULT_FILE = REPORT_DIR / "result.json"
+# ---------------------------------------------------------------------------
+# In-memory job registry  (guarded by _jobs_lock)
+# ---------------------------------------------------------------------------
+_jobs: dict = {}          # job_id → job dict
+_jobs_lock = threading.Lock()
 
-PDF_FILE = REPORT_DIR / "QA_Execution_Report.pdf"
+# ---------------------------------------------------------------------------
+# Executor — max_workers=1 serialises pytest runs.
+# Raise to e.g. 2 if you want limited parallelism; isolation is already in
+# place because every job uses its own output directory.
+# ---------------------------------------------------------------------------
+_executor = ThreadPoolExecutor(max_workers=1)
 
 
-@app.route("/run-tests", methods=["GET"])
-def run_tests():
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _job_dir(job_id: str) -> Path:
+    return JOBS_DIR / job_id
+
+
+def _update_job(job_id: str, **fields) -> None:
+    """Thread-safe partial update of a job record."""
+    with _jobs_lock:
+        _jobs[job_id].update(fields)
+
+
+def _get_job(job_id: str) -> dict | None:
+    """Return a shallow copy of the job record, or None if not found."""
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        return dict(job) if job else None
+
+
+# ---------------------------------------------------------------------------
+# Background worker — one per submitted job
+# ---------------------------------------------------------------------------
+
+def _execute_tests(job_id: str) -> None:
+    """Run pytest in a background thread; write all outputs to the job dir."""
+
+    job_dir = _job_dir(job_id)
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    result_file = job_dir / "result.json"
+    html_report = job_dir / "test_report.html"
+
+    _update_job(
+        job_id,
+        status="running",
+        started_at=datetime.now(timezone.utc).isoformat(),
+    )
 
     try:
-        REPORT_DIR.mkdir(exist_ok=True)
+        log.info("[job:%s] Starting pytest…", job_id)
 
-        print("Starting pytest execution...")
-
-        result = subprocess.run(
+        proc = subprocess.run(
             [
                 sys.executable,
                 "-m",
                 "pytest",
                 "-v",
                 "--json-report",
-                f"--json-report-file={RESULT_FILE}",
-                "--html=reports/test_report.html",
+                f"--json-report-file={result_file}",
+                f"--html={html_report}",
                 "--self-contained-html",
             ],
             cwd=PROJECT_ROOT,
@@ -46,58 +134,50 @@ def run_tests():
             text=True,
         )
 
-        print("Pytest completed")
-        print("Exit code:", result.returncode)
+        log.info("[job:%s] pytest exit code: %s", job_id, proc.returncode)
 
-        if not RESULT_FILE.exists():
-            raise Exception("result.json was not generated")
+        if not result_file.exists():
+            raise RuntimeError("result.json was not generated by pytest")
 
-        with open(RESULT_FILE, "r", encoding="utf-8") as file:
-            pytest_data = json.load(file)
+        with open(result_file, "r", encoding="utf-8") as fh:
+            pytest_data = json.load(fh)
 
         raw_summary = pytest_data.get("summary", {})
-
         summary = {
-            "total": raw_summary.get("total", 0),
-            "passed": raw_summary.get("passed", 0),
-            "failed": raw_summary.get("failed", 0),
+            "total":    raw_summary.get("total",  0),
+            "passed":   raw_summary.get("passed", 0),
+            "failed":   raw_summary.get("failed", 0),
             "duration": round(pytest_data.get("duration", 0), 2),
         }
 
-        failed_tests = []
-        all_tests = []
+        failed_tests: list = []
+        all_tests:    list = []
 
         for item in pytest_data.get("tests", []):
-            node_id = item.get("nodeid", "")
-            test_fn = node_id.split("::")[-1]
+            node_id  = item.get("nodeid", "")
+            test_fn  = node_id.split("::")[-1]
+            name     = test_fn.replace("test_", "").replace("_", " ").title()
+            outcome  = item.get("outcome", "unknown").upper()
 
-            name = test_fn.replace("test_", "").replace("_", " ").title()
-
-            outcome = item.get("outcome", "unknown").upper()
-
-            screenshot_path = f"screenshots/{test_fn}.png"
+            screenshot_path   = f"screenshots/{test_fn}.png"
             screenshot_exists = (PROJECT_ROOT / screenshot_path).exists()
 
-            test_entry = {
-                "name": name,
-                "status": outcome,
-                "screenshot": screenshot_path if screenshot_exists else None,
-            }
-
-            all_tests.append(test_entry)
+            all_tests.append(
+                {
+                    "name":       name,
+                    "status":     outcome,
+                    "screenshot": screenshot_path if screenshot_exists else None,
+                }
+            )
 
             if outcome == "FAILED":
-                call = item.get("call", {})
+                call     = item.get("call", {})
                 longrepr = str(call.get("longrepr", ""))
-                crash = call.get("crash", {})
+                crash    = call.get("crash", {})
 
-                # Extract clean assertion message from crash
                 crash_message = crash.get("message", "").strip()
-                reason = crash_message.split("\n")[0].strip()
-                if not reason:
-                    reason = "Test failed"
+                reason = crash_message.split("\n")[0].strip() or "Test failed"
 
-                # Extract the failing BDD step from longrepr
                 failing_step = None
                 match = re.search(
                     r'@(given|when|then)\s*\(\s*["\'](.+?)["\']\s*\)',
@@ -105,25 +185,24 @@ def run_tests():
                     re.IGNORECASE,
                 )
                 if match:
-                    keyword = match.group(1).capitalize()
-                    step_text = match.group(2)
-                    failing_step = f"{keyword}: {step_text}"
+                    failing_step = f"{match.group(1).capitalize()}: {match.group(2)}"
 
-                # Extract execution log (completed actions)
                 execution_log = [
-                    entry.get("msg", "") for entry in call.get("log", []) if entry.get("msg")
+                    entry.get("msg", "")
+                    for entry in call.get("log", [])
+                    if entry.get("msg")
                 ]
 
                 failed_tests.append(
                     {
-                        "name": name,
-                        "status": outcome,
-                        "failing_step": failing_step,
+                        "name":          name,
+                        "status":        outcome,
+                        "failing_step":  failing_step,
                         "crash_message": crash_message,
-                        "reason": reason,
+                        "reason":        reason,
                         "execution_log": execution_log,
-                        "jira_summary": f"Automation Failure - {name}",
-                        "screenshot": screenshot_path if screenshot_exists else None,
+                        "jira_summary":  f"Automation Failure - {name}",
+                        "screenshot":    screenshot_path if screenshot_exists else None,
                     }
                 )
 
@@ -134,61 +213,237 @@ def run_tests():
             )
         else:
             email_message = (
-                f"QA Automation execution completed with {summary['failed']} failed test(s)."
+                f"QA Automation execution completed with "
+                f"{summary['failed']} failed test(s)."
             )
 
-        response_data = {
-            "execution_status": ("PASSED" if result.returncode == 0 else "FAILED"),
-            "email_message": email_message,
-            "summary": summary,
-            "failed_tests": failed_tests,
-            "all_tests": all_tests,
-            "html_report": "reports/test_report.html",
+        result_payload = {
+            "job_id":           job_id,
+            "execution_status": "PASSED" if proc.returncode == 0 else "FAILED",
+            "email_message":    email_message,
+            "summary":          summary,
+            "failed_tests":     failed_tests,
+            "all_tests":        all_tests,
+            "html_report":      str(html_report.relative_to(PROJECT_ROOT)),
         }
 
-        print("Generating PDF report...")
-
+        # ── PDF generation ────────────────────────────────────────────────
+        pdf_path = job_dir / "QA_Execution_Report.pdf"
         try:
-            pdf_abs_path = PROJECT_ROOT / "reports" / "QA_Execution_Report.pdf"
-            generate_pdf(response_data, pdf_abs_path)
-            response_data["pdf_report"] = "reports/QA_Execution_Report.pdf"
-        except Exception as pdf_error:
-            print("PDF generation failed:", pdf_error)
-            response_data["pdf_report"] = None
+            generate_pdf(result_payload, pdf_path)
+            result_payload["pdf_report"] = str(pdf_path.relative_to(PROJECT_ROOT))
+            log.info("[job:%s] PDF generated: %s", job_id, pdf_path)
+        except Exception as pdf_err:
+            log.warning("[job:%s] PDF generation failed: %s", job_id, pdf_err)
+            result_payload["pdf_report"] = None
 
-        print("Execution completed successfully")
+        _update_job(
+            job_id,
+            status="completed",
+            finished_at=datetime.now(timezone.utc).isoformat(),
+            result=result_payload,
+        )
+        log.info("[job:%s] Completed", job_id)
 
-        return jsonify(response_data)
-
-    except Exception as e:
+    except Exception as exc:
         tb = traceback.format_exc()
-        print(tb)
+        log.error("[job:%s] FAILED:\n%s", job_id, tb)
+        _update_job(
+            job_id,
+            status="failed",
+            finished_at=datetime.now(timezone.utc).isoformat(),
+            error=str(exc),
+            traceback=tb,
+        )
 
+
+# ---------------------------------------------------------------------------
+# Flask routes
+# ---------------------------------------------------------------------------
+
+@app.route("/run-tests", methods=["GET", "POST"])
+def run_tests():
+    """
+    Enqueue a test run and return immediately.
+
+    Response 202:
+        {
+            "job_id":   "<uuid>",
+            "status":   "queued",
+            "poll_url": "/jobs/<uuid>"
+        }
+
+    The caller polls GET /jobs/<job_id> until status is "completed" or "failed".
+    n8n workflows should be updated to use this two-step pattern.
+    """
+    job_id = str(uuid.uuid4())
+
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "job_id":      job_id,
+            "status":      "queued",
+            "queued_at":   datetime.now(timezone.utc).isoformat(),
+            "started_at":  None,
+            "finished_at": None,
+            "result":      None,
+            "error":       None,
+            "traceback":   None,
+        }
+
+    _executor.submit(_execute_tests, job_id)
+
+    return jsonify(
+        {
+            "job_id":   job_id,
+            "status":   "queued",
+            "poll_url": f"/jobs/{job_id}",
+        }
+    ), 202
+
+
+@app.route("/jobs", methods=["GET"])
+def list_jobs():
+    """
+    Return execution history — all jobs, newest first.
+
+    The full test result payload is omitted from the list view to keep
+    responses small; fetch GET /jobs/<job_id> for the full payload.
+    """
+    with _jobs_lock:
+        snapshot = list(_jobs.values())
+
+    snapshot.sort(key=lambda j: j.get("queued_at", ""), reverse=True)
+
+    slim = [
+        {
+            "job_id":           j["job_id"],
+            "status":           j["status"],
+            "queued_at":        j.get("queued_at"),
+            "started_at":       j.get("started_at"),
+            "finished_at":      j.get("finished_at"),
+            "execution_status": (j.get("result") or {}).get("execution_status"),
+            "summary":          (j.get("result") or {}).get("summary"),
+        }
+        for j in snapshot
+    ]
+
+    return jsonify({"total": len(slim), "jobs": slim})
+
+
+@app.route("/jobs/<job_id>", methods=["GET"])
+def get_job(job_id: str):
+    """
+    Poll a specific job.
+
+    While running:
+        {"job_id": "...", "status": "running"|"queued", "started_at": "..."}
+
+    On completion:
+        Full result payload including summary, all_tests, failed_tests, etc.
+
+    On failure:
+        500 with error + traceback.
+    """
+    job = _get_job(job_id)
+    if job is None:
+        return make_response(
+            jsonify({"error": f"Job '{job_id}' not found"}), 404
+        )
+
+    if job["status"] == "failed":
         return make_response(
             jsonify(
                 {
-                    "error": str(e),
-                    "traceback": tb,
+                    "job_id":    job_id,
+                    "status":    "failed",
+                    "error":     job.get("error"),
+                    "traceback": job.get("traceback"),
                 }
             ),
             500,
         )
 
+    body = {
+        "job_id":      job_id,
+        "status":      job["status"],
+        "queued_at":   job.get("queued_at"),
+        "started_at":  job.get("started_at"),
+        "finished_at": job.get("finished_at"),
+    }
 
-@app.route("/download-report")
-def download_report():
+    if job["status"] == "completed":
+        body.update(job.get("result") or {})
 
-    if not PDF_FILE.exists():
-        return jsonify({"error": "PDF report not available yet"}), 404
+    return jsonify(body)
+
+
+@app.route("/jobs/<job_id>/download-report", methods=["GET"])
+def download_job_report(job_id: str):
+    """Download the PDF for a specific completed job."""
+    job = _get_job(job_id)
+    if job is None:
+        return make_response(
+            jsonify({"error": f"Job '{job_id}' not found"}), 404
+        )
+
+    if job["status"] != "completed":
+        return make_response(
+            jsonify(
+                {
+                    "error":  f"Job not completed yet (status: {job['status']})",
+                    "job_id": job_id,
+                }
+            ),
+            409,
+        )
+
+    pdf_path = _job_dir(job_id) / "QA_Execution_Report.pdf"
+    if not pdf_path.exists():
+        return make_response(
+            jsonify({"error": "PDF report not available for this job"}), 404
+        )
 
     return send_file(
-        PDF_FILE,
+        pdf_path,
+        as_attachment=True,
+        download_name=f"QA_Execution_Report_{job_id[:8]}.pdf",
+    )
+
+
+@app.route("/download-report", methods=["GET"])
+def download_latest_report():
+    """
+    Download the PDF from the most recently completed job.
+
+    Kept for backwards-compatibility with existing n8n workflows that call
+    this endpoint directly after /run-tests.  Prefer the per-job endpoint
+    GET /jobs/<job_id>/download-report for new workflows.
+    """
+    with _jobs_lock:
+        completed = [j for j in _jobs.values() if j["status"] == "completed"]
+
+    if not completed:
+        return make_response(
+            jsonify({"error": "No completed jobs available"}), 404
+        )
+
+    latest   = max(completed, key=lambda j: j.get("finished_at", ""))
+    pdf_path = _job_dir(latest["job_id"]) / "QA_Execution_Report.pdf"
+
+    if not pdf_path.exists():
+        return make_response(
+            jsonify({"error": "PDF report not available"}), 404
+        )
+
+    return send_file(
+        pdf_path,
         as_attachment=True,
         download_name="QA_Execution_Report.pdf",
     )
 
 
 if __name__ == "__main__":
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
     app.run(
         host="0.0.0.0",
         port=5000,

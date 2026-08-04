@@ -17,11 +17,17 @@ screenshots/
 
 # IDE files
 .vscode/
+.idea/
 
 # OS files
 .DS_Store
 Thumbs.db
 
 .env
+
+# Logs
+logs/
+*.log
+
 # graphify-axet
 .graphify/

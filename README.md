@@ -6,29 +6,18 @@ Playwright + Pytest BDD automation framework using Page Object Model (POM).
 
 ## Tech Stack
 
-- Python
-- Playwright
-- Pytest
-- Pytest-BDD
-- Ruff
+- Python · Playwright · Pytest · Pytest-BDD · Flask · Ruff
 
 ## Quick Start
 
-1. Create and activate virtualenv:
-
-```bash
+```powershell
 python -m venv .venv
-.venv\Scripts\activate
-```
-
-2. Install dependencies and Playwright browsers:
-
-```bash
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 playwright install
 ```
 
-3. Add environment overrides in a `.env` file (optional):
+Add a `.env` file (optional):
 
 ```
 BASE_URL=https://www.saucedemo.com
@@ -37,96 +26,109 @@ HEADLESS=True
 DEFAULT_TIMEOUT=5000
 ```
 
-## Running Tests (Common Commands)
+---
 
-- Run all tests: `pytest -v`
-- Run a single feature or test file: `pytest tests/test_browser_launch.py -v`
-- Run tests matching a marker: `pytest -m smoke -v`
-- Run tests in parallel: `pytest -n auto -v`
-- Run a specific BDD scenario by name: `pytest -k "Login with standard user" -v`
+## Running Tests Directly
 
-## Cross-browser
-
-Set `BROWSER` in `.env` or the environment to `chromium`, `firefox`, or `webkit` and run `pytest -v`.
-
-## Conventions & Project Layout
-
-- `components/` — reusable UI element wrappers (Button, TextInput, Label).
-- `pages/` — Page Objects that compose components and expose page-level actions.
-- `actions/` — (Optional) business-level workflows that orchestrate multiple page calls. Keep or remove based on suite size.
-- `fixtures/` — pytest fixtures (browser, pages, data, screenshots).
-- `tests/step_definitions/` — BDD step implementations for feature files.
-- `features/` — Gherkin feature files.
-
-## Adding Tests
-
-1. Add a new feature file in `features/`.
-2. Add step implementations in `tests/step_definitions/` or extend `tests/step_definitions/shared_steps.py` for shared steps.
-3. Add page helper methods in `pages/` and components in `components/` as needed.
-
-## Code Quality & Tooling
-
-- Format: `ruff format .`
-- Lint: `ruff check .`
-- Recommended: add `pre-commit` configured to run `ruff` and tests on commit.
-
-## CI Suggestions
-
-- Install Python dependencies and Playwright browsers in CI.
-- Run `ruff check .` then `pytest -n auto -v` and publish `reports/test_report.html` as an artifact.
-
-## Troubleshooting
-
-- If you see `ModuleNotFoundError` for local modules, ensure the virtualenv is activated and imports are package-style (e.g., `from config.settings import ...`).
-- Clear Python cache if stale imports occur: `Get-ChildItem -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force` (PowerShell) or `find . -name "__pycache__" -exec rm -r {} +` (Unix).
-- If Playwright can't find browsers, run `playwright install`.
-
-## Contribution
-
-- Open a feature branch, add tests, run the suite locally, and open a PR with a short description.
+```powershell
+pytest -v                                          # all tests
+pytest tests/test_browser_launch.py -v            # single file
+pytest -m smoke -v                                 # by marker
+pytest -n auto -v                                  # parallel
+pytest -k "Login with standard user" -v           # by name
+```
 
 ---
 
-# Running the QA Automation Workflow
+## Running the Full Workflow (n8n + Flask)
 
-## 1. Start the n8n Container
+### 1. Start n8n
 
 ```powershell
-podman stop n8n
 podman start n8n
-podman ps
 ```
 
-## 2. Start the Flask API
+Then open `http://localhost:5678` and import:
+`n8n-workflows/QA Test Execution Orchestrator v3.json`
 
-Open a new PowerShell window.
-Navigate to the project folder and Activate the virtual environment.
+### 2. Start the Flask API
+
+Open a **separate** PowerShell window:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
-
-Then Run the Flask service.
+.venv\Scripts\Activate.ps1
 python automation_services\test_runner.py
 ```
 
-Leave this terminal running.
+Leave this running. Flask listens on `http://localhost:5000`.
 
-## 3. Open n8n
+### 3. Trigger via n8n
 
-Open your browser and navigate to:
+Open `http://localhost:5678` and click **Execute workflow**.
 
-```
-http://localhost:5678
-```
+n8n will POST to `/run-tests`, poll until the job completes, send the email, and attach the PDF — all automatically.
 
-Execute the workflow.
+### 4. Verify manually (optional)
 
-## 4. Test the Flask API (Optional)
-
-Open another PowerShell window.
+If you want to check the Flask API directly without n8n:
 
 ```powershell
-Invoke-WebRequest http://localhost:5000/run-tests -UseBasicParsing
+# 1. Enqueue a run
+$jobId = ((Invoke-WebRequest -Method POST http://localhost:5000/run-tests -UseBasicParsing).Content | ConvertFrom-Json).job_id
+Write-Host "Job ID: $jobId"
+
+# 2. Check status (run again after ~30 s to see 'completed')
+(Invoke-WebRequest "http://localhost:5000/jobs/$jobId" -UseBasicParsing).Content | ConvertFrom-Json |
+    Select-Object job_id, status, execution_status, summary
+
+# 3. Download the PDF once completed
+Invoke-WebRequest "http://localhost:5000/jobs/$jobId/download-report" -OutFile "QA_Report.pdf" -UseBasicParsing
 ```
 
-This will execute the test suite and return the JSON response produced by the Flask API.
+---
+
+## Flask API Reference
+
+| Method | Endpoint                         | Description                                             |
+| ------ | -------------------------------- | ------------------------------------------------------- |
+| `POST` | `/run-tests`                     | Enqueue a test run → returns `202 {job_id}` immediately |
+| `GET`  | `/jobs/<job_id>`                 | Poll status; includes full result when `completed`      |
+| `GET`  | `/jobs`                          | Execution history, newest first                         |
+| `GET`  | `/jobs/<job_id>/download-report` | Download per-job PDF                                    |
+| `GET`  | `/download-report`               | Download latest completed job's PDF (n8n compat)        |
+
+**Concurrency:** `max_workers=1` ensures only one pytest process runs at a time. Each job writes to its own `reports/jobs/<job_id>/` directory, so there are no shared files and no race conditions.
+
+---
+
+## Project Layout
+
+```
+components/      UI element wrappers (Button, TextInput, Label)
+pages/           Page Objects
+actions/         Business-level workflows
+fixtures/        Pytest fixtures (browser, pages, data, screenshots)
+tests/           Step definitions and test files
+features/        Gherkin feature files
+automation_services/  Flask API + PDF report generator
+n8n-workflows/   n8n workflow JSON files
+reports/jobs/    Per-run output (result.json, HTML, PDF)
+```
+
+---
+
+## Code Quality
+
+```powershell
+ruff format .    # format
+ruff check .     # lint
+```
+
+---
+
+## Troubleshooting
+
+- **ModuleNotFoundError** — ensure virtualenv is activated and imports use package-style paths.
+- **Stale cache** — `Get-ChildItem -Recurse -Filter "__pycache__" | Remove-Item -Recurse -Force`
+- **Playwright browser missing** — run `playwright install`
+- **Port 5000 in use** — check for another Flask process: `netstat -ano | findstr :5000`
