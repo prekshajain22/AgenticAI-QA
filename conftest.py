@@ -1,4 +1,4 @@
-from utils.logger import get_logger
+from automation.utils.logger import get_logger
 
 
 def pytest_sessionstart(session):
@@ -7,10 +7,10 @@ def pytest_sessionstart(session):
 
 
 pytest_plugins = [
-    "fixtures.browser_fixtures",
-    "fixtures.data_fixtures",
-    "fixtures.pages_fixtures",
-    "fixtures.action_fixtures",
-    "fixtures.screenshot_fixtures",
+    "automation.fixtures.browser_fixtures",
+    "automation.fixtures.data_fixtures",
+    "automation.fixtures.pages_fixtures",
+    "automation.fixtures.action_fixtures",
+    "automation.fixtures.screenshot_fixtures",
     "tests.step_definitions.shared_steps",
 ]

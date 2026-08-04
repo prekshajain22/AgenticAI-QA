@@ -1,7 +1,7 @@
 import pytest
 
-from actions.inventory_actions import InventoryActions
-from actions.login_actions import LoginActions
+from automation.actions.inventory_actions import InventoryActions
+from automation.actions.login_actions import LoginActions
 
 
 @pytest.fixture

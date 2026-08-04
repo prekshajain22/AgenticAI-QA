@@ -31,3 +31,7 @@ logs/
 
 # graphify-axet
 .graphify/
+
+.ruff_cache/
+
+/output/

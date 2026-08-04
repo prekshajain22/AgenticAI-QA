@@ -1,7 +1,7 @@
 import pytest
 
-from pages.inventory_page import InventoryPage
-from pages.login_page import LoginPage
+from automation.pages.inventory_page import InventoryPage
+from automation.pages.login_page import LoginPage
 
 
 @pytest.fixture

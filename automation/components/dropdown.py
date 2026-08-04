@@ -1,4 +1,4 @@
-from components.base_component import BaseComponent
+from automation.components.base_component import BaseComponent
 
 
 class Dropdown(BaseComponent):

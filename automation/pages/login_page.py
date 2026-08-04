@@ -1,9 +1,9 @@
-from components.button import Button
-from components.text_input import TextInput
-from components.text_element import Label
+from automation.components.button import Button
+from automation.components.text_input import TextInput
+from automation.components.text_element import Label
 from config.settings import BASE_URL
-from locators.login_locators import LoginLocators
-from pages.base_page import BasePage
+from automation.locators.login_locators import LoginLocators
+from automation.pages.base_page import BasePage
 
 
 class LoginPage(BasePage):

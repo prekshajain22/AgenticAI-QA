@@ -1,6 +1,6 @@
 from time import sleep
 
-from components.base_component import BaseComponent
+from automation.components.base_component import BaseComponent
 from config.settings import DEFAULT_TIMEOUT
 
 

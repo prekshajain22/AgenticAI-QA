@@ -13,7 +13,7 @@ def read_json(relative_path: str) -> dict:
         Dictionary containing JSON data.
     """
 
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = Path(__file__).resolve().parent.parent.parent
 
     file_path = project_root / relative_path
 

@@ -1,7 +1,7 @@
-from components.button import Button
-from components.text_element import Label
-from locators.inventory_locators import InventoryLocators
-from pages.base_page import BasePage
+from automation.components.button import Button
+from automation.components.text_element import Label
+from automation.locators.inventory_locators import InventoryLocators
+from automation.pages.base_page import BasePage
 
 
 class InventoryPage(BasePage):
