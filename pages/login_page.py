@@ -14,6 +14,7 @@ class LoginPage(BasePage):
         self.password = TextInput(page, LoginLocators.PASSWORD_INPUT, "Password")
         self.login_button = Button(page, LoginLocators.LOGIN_BUTTON, "Login Button")
         self.inventory = Label(page, LoginLocators.INVENTORY_CONTAINER, "Inventory List")
+        self.error_banner = Label(page, LoginLocators.ERROR_BANNER, "Error Banner")
 
     def open_application(self):
         self.page.goto(BASE_URL)
@@ -25,3 +26,6 @@ class LoginPage(BasePage):
 
     def verify_inventory_page(self):
         return self.inventory.is_visible()
+
+    def verify_login_error(self):
+        return self.error_banner.is_visible()

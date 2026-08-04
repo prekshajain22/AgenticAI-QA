@@ -10,4 +10,4 @@ Feature: Login
     Scenario: Login with invalid credentials should fail and capture screenshot
         Given I Open The Application
         When I Login Using User "invalid_user"
-        Then I Should See The Inventory Page
+        Then I Should See A Login Error
