@@ -1,7 +1,7 @@
 """Unit tests for ai/ai_failure_agent.py and ai/report_analysis_agent.py"""
 
 import json
-from unittest.mock import mock_open, patch
+from unittest.mock import AsyncMock, mock_open, patch
 
 import pytest
 
@@ -26,7 +26,7 @@ def _make_agent(tests):
     }
     raw = json.dumps(report)
     with patch("builtins.open", mock_open(read_data=raw)):
-        with patch("ai.report_analysis_agent.Path"):
+        with patch("agents.report_analysis_agent.Path"):
             return ReportAnalysisAgent("fake/path.json")
 
 
@@ -36,43 +36,64 @@ def _make_agent(tests):
 
 
 def test_analyse_returns_string():
-    """analyse() returns a non-empty string (the prompt / AI output)."""
+    """analyse() returns a non-empty string (the AI output)."""
     agent = AIFailureAgent()
-    result = agent.analyse(
-        {
-            "test": "tests/step_definitions/test_login_steps.py::test_login",
-            "error": "AssertionError: Inventory page was not displayed",
-            "logs": ["Opening application", "Logging in as invalid_user"],
-        }
-    )
+    # Patch the async helper so no real OpenAI call is made.
+    # AsyncMock returns a coroutine that asyncio.run() can drive normally.
+    with patch(
+        "agents.ai_failure_agent._call_agent",
+        new_callable=AsyncMock,
+        return_value="AI analysis result",
+    ):
+        result = agent.analyse(
+            {
+                "test": "tests/step_definitions/test_login_steps.py::test_login",
+                "error": "AssertionError: Inventory page was not displayed",
+                "logs": ["Opening application", "Logging in as invalid_user"],
+            }
+        )
     assert isinstance(result, str)
     assert len(result) > 0
 
 
 def test_analyse_includes_test_name():
-    """The prompt / output references the test name."""
+    """The prompt sent to the AI references the test name."""
     agent = AIFailureAgent()
-    result = agent.analyse(
-        {
-            "test": "my_unique_test_name",
-            "error": "Some error",
-            "logs": [],
-        }
-    )
-    assert "my_unique_test_name" in result
+    with patch(
+        "agents.ai_failure_agent._call_agent",
+        new_callable=AsyncMock,
+        return_value="ok",
+    ) as mock_call:
+        agent.analyse(
+            {
+                "test": "my_unique_test_name",
+                "error": "Some error",
+                "logs": [],
+            }
+        )
+    # Inspect the prompt argument that was passed to _call_agent
+    prompt_sent = mock_call.call_args[0][0]
+    assert "my_unique_test_name" in prompt_sent
 
 
 def test_analyse_includes_error():
-    """The prompt / output references the error message."""
+    """The prompt sent to the AI references the error message."""
     agent = AIFailureAgent()
-    result = agent.analyse(
-        {
-            "test": "some_test",
-            "error": "unique_error_string_xyz",
-            "logs": [],
-        }
-    )
-    assert "unique_error_string_xyz" in result
+    with patch(
+        "agents.ai_failure_agent._call_agent",
+        new_callable=AsyncMock,
+        return_value="ok",
+    ) as mock_call:
+        agent.analyse(
+            {
+                "test": "some_test",
+                "error": "unique_error_string_xyz",
+                "logs": [],
+            }
+        )
+    # Inspect the prompt argument that was passed to _call_agent
+    prompt_sent = mock_call.call_args[0][0]
+    assert "unique_error_string_xyz" in prompt_sent
 
 
 # ---------------------------------------------------------------------------

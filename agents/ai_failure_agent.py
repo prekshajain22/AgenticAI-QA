@@ -1,6 +1,50 @@
-class AIFailureAgent:
-    def analyse(self, failure):
+import asyncio
 
+import httpx
+from autogen_agentchat.agents import AssistantAgent
+from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+from config.settings import AI_MODEL, OPENAI_API_KEY
+
+
+async def _call_agent(prompt: str) -> str:
+    """Run a single AutoGen AssistantAgent turn and return the response text.
+
+    This coroutine is the *only* async code in the agent stack.  It is always
+    driven from the synchronous ``AIFailureAgent.analyse`` method via
+    ``asyncio.run()``, which keeps the rest of the call-chain (ReportAnalysisAgent,
+    Flask routes, pytest) fully synchronous — no ``flask[async]`` or ASGI plumbing
+    required.
+    """
+    model_client = OpenAIChatCompletionClient(
+        model=AI_MODEL,
+        api_key=OPENAI_API_KEY,
+        http_client=httpx.AsyncClient(verify=False),
+    )
+    try:
+        agent = AssistantAgent(name="QA_Failure_Agent", model_client=model_client)
+        result = await agent.run(task=prompt)
+        # TaskResult.messages is a list of ChatMessage objects; the last one
+        # is the final assistant reply.
+        if result.messages:
+            last = result.messages[-1]
+            # content is a str for text responses, list for multimodal — guard both
+            return last.content if isinstance(last.content, str) else str(last.content)
+        return prompt  # fallback: return the prompt if no messages came back
+    finally:
+        await model_client.close()
+
+
+class AIFailureAgent:
+    def analyse(self, failure: dict) -> str:
+        """Analyse a test failure with AutoGen AI and return a structured report.
+
+        The method is intentionally *synchronous* so that the existing sync
+        call-chain (ReportAnalysisAgent → Flask route → pytest) does not need
+        any async plumbing.  The async AutoGen call is bridged via
+        ``asyncio.run()``, which spins up a fresh event loop for each
+        invocation and blocks until the coroutine completes.
+        """
         prompt = f"""
 You are an expert QA automation engineer.
 
@@ -24,5 +68,4 @@ Provide:
 
 Return a structured QA analysis.
 """
-
-        return prompt
+        return asyncio.run(_call_agent(prompt))

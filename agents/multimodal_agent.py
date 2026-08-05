@@ -15,6 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 IMAGE_PATH = PROJECT_ROOT / "test_data" / "image1.jpg"
 
+
 async def agent_multimodal():
 
     model_client = OpenAIChatCompletionClient(
@@ -29,9 +30,7 @@ async def agent_multimodal():
     )
 
     message = MultiModalMessage(
-        content=[
-            "What do you see in this image?",
-            Image.from_file(IMAGE_PATH)],
+        content=["What do you see in this image?", Image.from_file(IMAGE_PATH)],
         source="user",
     )
     async for event in assistant.run_stream(task=message):
