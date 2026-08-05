@@ -14,15 +14,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 async def agent_text():
 
-    openai_model_client = OpenAIChatCompletionClient(
+    model_client = OpenAIChatCompletionClient(
         model=AI_MODEL,
         api_key=OPENAI_API_KEY,
         http_client=httpx.AsyncClient(verify=False),
     )
 
-    assistant_agent = AssistantAgent(name="Assistant_Agent", model_client=openai_model_client)
+    assistant_agent = AssistantAgent(name="Assistant_Agent", model_client=model_client)
     await Console(assistant_agent.run_stream(task="What are AI Agents?"))
-    await openai_model_client.close()
+    await model_client.close()
 
 
 asyncio.run(agent_text())

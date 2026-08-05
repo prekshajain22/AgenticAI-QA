@@ -1,10 +1,14 @@
 import asyncio
+import logging
 
 import httpx
 from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+from openai import APIError, RateLimitError
 
 from config.settings import AI_MODEL, OPENAI_API_KEY
+
+log = logging.getLogger(__name__)
 
 
 async def _call_agent(prompt: str) -> str:
@@ -30,7 +34,16 @@ async def _call_agent(prompt: str) -> str:
             last = result.messages[-1]
             # content is a str for text responses, list for multimodal — guard both
             return last.content if isinstance(last.content, str) else str(last.content)
-        return prompt  # fallback: return the prompt if no messages came back
+        return "AI analysis unavailable: no response received."
+    except RateLimitError as exc:
+        log.warning("OpenAI quota exhausted — AI analysis skipped: %s", exc)
+        return f"AI analysis unavailable: OpenAI quota exhausted ({exc})."
+    except APIError as exc:
+        log.warning("OpenAI API error — AI analysis skipped: %s", exc)
+        return f"AI analysis unavailable: OpenAI API error ({exc})."
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Unexpected error in AI analysis — skipped: %s", exc)
+        return f"AI analysis unavailable: {exc}."
     finally:
         await model_client.close()
 

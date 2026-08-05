@@ -2,7 +2,9 @@ import asyncio
 
 import httpx
 from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.conditions import MaxMessageTermination
 from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_agentchat.ui import Console
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 
 from config.settings import AI_MODEL, OPENAI_API_KEY
@@ -31,8 +33,10 @@ async def main():
     team = RoundRobinGroupChat(
         name="Round_Robin_Group",
         participants=[agent1, agent2],
+        termination_condition=MaxMessageTermination(max_messages=3),
     )
-    team.run_stream(task="Let's discuss what is geometry and how it works?")
+    await Console(team.run_stream(task="Let's discuss what is geometry and how it works?"))
+    await model_client.close()
 
 
 asyncio.run(main())
