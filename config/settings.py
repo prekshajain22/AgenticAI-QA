@@ -21,3 +21,6 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "QA")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AI_MODEL = os.getenv("AI_MODEL")
+
+JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "CRED")
+JIRA_PROJECT_NAME = os.getenv("JIRA_PROJECT_NAME", "CreditBank")
