@@ -19,4 +19,5 @@ FRAMEWORK = os.getenv("FRAMEWORK", "Playwright")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "QA")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AI_MODEL = os.getenv("AI_MODEL")
