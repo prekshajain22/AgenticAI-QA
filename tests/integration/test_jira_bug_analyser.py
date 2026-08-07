@@ -1,11 +1,14 @@
 """
-Integration test / runnable script for the JIRA Bug Analyser Agent.
+Integration test for the JIRA Bug Analyser Agent.
 
-Runs the agent end-to-end against a real JIRA instance.
+Hits a real JIRA instance + Gemini API.
+Excluded from the default CI run — run explicitly with:
 
-Usage:
-    python -m agents.jira.bug_analyser
-    python -m pytest tests/unit/test_jira_bug_analyser.py -s
+    pytest -m integration -s
+
+or set all required env vars and run:
+
+    pytest tests/integration/ -s
 """
 
 import asyncio
@@ -15,7 +18,9 @@ import pytest
 
 from agents.jira.bug_analyser import run
 
-_JIRA_CREDS_AVAILABLE = all(os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN"))
+_JIRA_CREDS_AVAILABLE = all(
+    os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN")
+)
 
 
 @pytest.mark.integration

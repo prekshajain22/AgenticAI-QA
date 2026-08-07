@@ -20,7 +20,11 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "QA")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-AI_MODEL = os.getenv("AI_MODEL")
+AI_MODEL = os.getenv("AI_MODEL")                               # OpenAI agents
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")  # Gemini/JIRA agents
 
+JIRA_URL = os.getenv("JIRA_URL")
+JIRA_USERNAME = os.getenv("JIRA_USERNAME")
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
 JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "CRED")
 JIRA_PROJECT_NAME = os.getenv("JIRA_PROJECT_NAME", "CreditBank")

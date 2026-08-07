@@ -69,7 +69,8 @@ async def run() -> str:
 
                 You MUST use jira_search with this JQL:
 
-                    project = {JIRA_PROJECT_KEY} AND issuetype = Bug AND status != Done ORDER BY priority DESC
+                project = {JIRA_PROJECT_KEY} AND issuetype = Bug
+                AND status != Done ORDER BY priority DESC
 
                 After retrieving the bugs, produce a QA defect analysis report in this format:
 

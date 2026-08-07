@@ -4,7 +4,7 @@ Playwright + Pytest BDD automation framework with AI-powered failure analysis, a
 
 ## Tech Stack
 
-Python · Playwright · Pytest-BDD · Flask · ReportLab · Ruff · n8n
+Python · Playwright · Pytest-BDD · Flask · ReportLab · Ruff · n8n · AutoGen · Gemini · JIRA MCP
 
 ---
 
@@ -16,6 +16,17 @@ python -m venv .venv
 pip install -r requirements.txt
 playwright install
 ```
+
+> **JIRA agents also require `uv` (for `uvx mcp-atlassian`):**
+>
+> ```powershell
+> # Windows
+> powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+> # macOS / Linux
+> curl -LsSf https://astral.sh/uv/install.sh | sh
+> ```
+>
+> See https://docs.astral.sh/uv/getting-started/installation/
 
 Create a `.env` file (all values are optional — defaults shown):
 
@@ -34,13 +45,49 @@ FLASK_PORT=5001
 ## Running Tests
 
 ```powershell
-pytest -v                                          # all tests
+pytest -v                                          # all tests (integration excluded by default)
 pytest tests/unit/ -v                              # unit tests only
 pytest tests/step_definitions/ -v                 # BDD tests only
 pytest -m smoke -v                                 # smoke suite
 pytest -m regression -v                            # regression suite
+pytest -m integration -s                           # integration tests (requires real credentials)
 pytest -n auto -v                                  # parallel execution
 pytest -k "login" -v                               # by name filter
+```
+
+> Integration tests (`tests/integration/`) hit real external services (JIRA, Gemini).
+> They are excluded from the default run via `pytest.ini` `-m "not integration"`.
+> Run them explicitly after setting credentials in `.env`.
+
+---
+
+## JIRA AI Agents
+
+The `agents/jira/` package provides AutoGen agents that connect to JIRA via the
+[mcp-atlassian](https://github.com/sooperset/mcp-atlassian) MCP server (requires `uv`).
+
+**Required `.env` variables:**
+
+```
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-2.0-flash   # optional — this is the default
+JIRA_URL=https://your-org.atlassian.net
+JIRA_USERNAME=your-email@example.com
+JIRA_API_TOKEN=...
+JIRA_PROJECT_KEY=CRED
+JIRA_PROJECT_NAME=CreditBank
+```
+
+**Run the Bug Analyser:**
+
+```powershell
+python -m agents.jira.bug_analyser
+```
+
+**Verify MCP connectivity first:**
+
+```powershell
+python scripts/check_mcp_connection.py
 ```
 
 ---
@@ -111,10 +158,18 @@ agenticai-qa/
 ├── service/                 # Flask test-runner API
 │   ├── test_runner.py       #   POST /run-tests · GET /health · GET /download-report
 │   └── pdf_report_generator.py   # ReportLab PDF builder
+├── agents/
+│   ├── jira/                # JIRA AutoGen agents
+│   │   ├── _client.py       #   Shared Gemini client + MCP server params factory
+│   │   └── bug_analyser.py  #   Bug Analyser agent (searches & reports defects)
+│   └── ...                  # Other AutoGen agents (ai_failure_agent, etc.)
+├── scripts/
+│   └── check_mcp_connection.py  # Manual connectivity check for mcp-atlassian
 ├── tests/
 │   ├── features/            # Gherkin feature files (login, add_to_cart)
 │   ├── step_definitions/    # Pytest-BDD step implementations
-│   └── unit/                # Unit tests (data_reader, AI agents)
+│   ├── unit/                # Fast unit tests (no external services)
+│   └── integration/         # Integration tests — excluded from CI by default
 ├── config/
 │   └── settings.py          # Env-var driven config (BASE_URL, BROWSER, HEADLESS, …)
 ├── test_data/
@@ -144,10 +199,13 @@ ruff check .     # lint (E, F, I rules)
 
 ## Troubleshooting
 
-| Symptom                    | Fix                                                                                                  |
-| -------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `ModuleNotFoundError`      | Activate the virtualenv; run from the project root                                                   |
-| Port already in use        | Set `FLASK_PORT=5002` in `.env`                                                                      |
-| Playwright browser missing | `playwright install`                                                                                 |
-| n8n can't reach Flask      | Flask must be running; `host.containers.internal` resolves the host from inside the podman container |
-| Stale `__pycache__`        | `Get-ChildItem -Recurse -Filter __pycache__ \| Remove-Item -Recurse -Force`                          |
+| Symptom                        | Fix                                                                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `ModuleNotFoundError`          | Activate the virtualenv; run from the project root                                                                |
+| Port already in use            | Set `FLASK_PORT=5002` in `.env`                                                                                   |
+| Playwright browser missing     | `playwright install`                                                                                              |
+| n8n can't reach Flask          | Flask must be running; `host.containers.internal` resolves the host from inside the podman container              |
+| Stale `__pycache__`            | `Get-ChildItem -Recurse -Filter __pycache__ \| Remove-Item -Recurse -Force`                                       |
+| `uvx: command not found`       | Install `uv`: see https://docs.astral.sh/uv/getting-started/installation/                                         |
+| `ModuleNotFoundError: mcp`     | Run `pip install -r requirements.txt` — needs `autogen-ext[mcp]` and `mcp<2.0.0`                                  |
+| JIRA `KeyError` / `ValueError` | Set `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` in `.env`; verify with `python scripts/check_mcp_connection.py` |
