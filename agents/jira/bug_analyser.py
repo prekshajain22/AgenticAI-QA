@@ -61,7 +61,7 @@ async def run() -> str:
 
                 Known Jira project: {JIRA_PROJECT_KEY} ({JIRA_PROJECT_NAME})
                 """,
-            )
+        )
 
         result = await agent.run(
             task=f"""

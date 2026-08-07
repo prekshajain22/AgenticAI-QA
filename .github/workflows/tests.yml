@@ -31,12 +31,15 @@ jobs:
         run: |
           ruff check .
 
+      - name: Create output directories
+        run: mkdir -p output/reports output/screenshots
+
       - name: Run tests
         env:
           BASE_URL: "https://www.saucedemo.com"
           HEADLESS: "True"
         run: |
-          pytest -v
+          pytest -v -m "not integration"
 
       - name: Upload test report
         if: always()

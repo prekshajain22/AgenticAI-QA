@@ -9,10 +9,17 @@ Usage:
 """
 
 import asyncio
+import os
+
+import pytest
 
 from agents.jira.bug_analyser import run
 
+_JIRA_CREDS_AVAILABLE = all(os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN"))
 
+
+@pytest.mark.integration
+@pytest.mark.skipif(not _JIRA_CREDS_AVAILABLE, reason="JIRA credentials not set")
 def test_jira_bug_analyser_returns_report():
     """Agent should return a non-empty defect report string."""
     report = asyncio.run(run())
