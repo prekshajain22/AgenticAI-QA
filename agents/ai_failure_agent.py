@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import logging
 
 import httpx
@@ -81,4 +82,16 @@ Provide:
 
 Return a structured QA analysis.
 """
+        # asyncio.run() cannot be called when an event loop is already running
+        # (e.g. pytest session with anyio plugin active in CI).  In that case,
+        # submit to a thread-pool worker which gets its own fresh event loop.
+        try:
+            asyncio.get_running_loop()
+            running = True
+        except RuntimeError:
+            running = False
+
+        if running:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(asyncio.run, _call_agent(prompt)).result()
         return asyncio.run(_call_agent(prompt))
