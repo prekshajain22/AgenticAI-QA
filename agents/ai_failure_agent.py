@@ -7,7 +7,7 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from openai import APIError, RateLimitError
 
-from config.settings import AI_MODEL, OPENAI_API_KEY
+from config.settings import OPENAI_API_KEY, OPENAI_MODEL
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ async def _call_agent(prompt: str) -> str:
     required.
     """
     model_client = OpenAIChatCompletionClient(
-        model=AI_MODEL,
+        model=OPENAI_MODEL,
         api_key=OPENAI_API_KEY,
         http_client=httpx.AsyncClient(verify=False),
     )
@@ -60,27 +60,27 @@ class AIFailureAgent:
         invocation and blocks until the coroutine completes.
         """
         prompt = f"""
-You are an expert QA automation engineer.
+            You are an expert QA automation engineer.
 
-Analyse this failed test.
+            Analyse this failed test.
 
-Test:
-{failure["test"]}
+            Test:
+            {failure["test"]}
 
-Error:
-{failure["error"]}
+            Error:
+            {failure["error"]}
 
-Logs:
-{failure["logs"]}
+            Logs:
+            {failure["logs"]}
 
-Provide:
+            Provide:
 
-1. Failure classification
-2. Root cause
-3. Recommended fix
-4. Confidence score
+            1. Failure classification
+            2. Root cause
+            3. Recommended fix
+            4. Confidence score
 
-Return a structured QA analysis.
+            Return a structured QA analysis.
 """
         # asyncio.run() cannot be called when an event loop is already running
         # (e.g. pytest session with anyio plugin active in CI).  In that case,

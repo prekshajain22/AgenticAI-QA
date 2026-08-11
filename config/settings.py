@@ -24,7 +24,7 @@ GROQ_API_KEY   = os.getenv("GROQ_API_KEY")
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")                           # OpenAI agents
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")       # Gemini agents
-GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # Groq agents
+GROQ_MODEL   = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")     # Groq agents (20k TPM free)
 
 JIRA_URL = os.getenv("JIRA_URL")
 JIRA_USERNAME = os.getenv("JIRA_USERNAME")

@@ -1,94 +1,67 @@
 """
 JIRA Bug Analyser Agent
+========================
+Searches for open defects in a JIRA project and generates a structured
+QA defect analysis report with a smoke test scenario.
 
-Searches for open defects in a JIRA project and generates
-a structured QA defect analysis report.
+The agent is built via the generic ``create_agent`` factory and its
+behaviour is controlled entirely by the ``bug_analyst`` prompt template —
+swap the prompt to change what the agent analyses or how it reports.
 
-Usage:
+Usage
+-----
     python -m agents.jira.bug_analyser
 """
 
 import asyncio
 
-from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.tools.mcp import McpWorkbench
 from dotenv import load_dotenv
 
-from agents.jira._client import create_model_client, create_server_params
+from agents.agent_factory import AgentFactory
+from agents.mcp_config import MCPConfig
+from agents.prompts import jira_bug_analyst
 from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
 load_dotenv()
 
 
 async def run() -> str:
-    """Run the bug analyser agent and return the final report."""
-    model_client = create_model_client()
-    server_params = create_server_params()
+    """Run the Bug Analyser agent and return the final report string.
 
-    async with McpWorkbench(server_params) as mcp:
-        agent = AssistantAgent(
-            name="jira_bug_analyser",
-            model_client=model_client,
-            workbench=mcp,
-            system_message=f"""
-                You are a Senior QA JIRA Bug Analyser Agent.
+    The returned string ends with ``'HANDOFF TO AUTOMATION'`` when the agent
+    has successfully produced a smoke test scenario, making it ready to be
+    consumed by the Playwright automation agent.
+    """
+    model_client = MCPConfig.default_client()
+    factory = AgentFactory(model_client=model_client)
 
-                Your responsibility is to retrieve open defects from Jira and produce
-                a structured QA defect analysis report.
-
-                You have access to Jira MCP tools.
-
-                Workflow:
-                1. Search Jira issues using jira_search.
-                2. Retrieve real defect data.
-                3. Analyse each defect.
-                4. Generate a structured QA report.
-
-                For every defect include:
-                - Jira Issue Key
-                - Summary
-                - Issue Type
-                - Status
-                - Priority
-                - QA Impact
-                - Risk Assessment
-                - Suggested Regression Tests
-
-                Rules:
-                - Always use Jira tools — never invent issues.
-                - Do not answer without retrieving Jira data first.
-                - Act like a senior QA engineer reviewing a defect backlog.
-
-                Known Jira project: {JIRA_PROJECT_KEY} ({JIRA_PROJECT_NAME})
-                """,
+    async with McpWorkbench(MCPConfig.jira_server_params()) as jira_mcp:
+        agent = factory.create_agent(
+            name="BugAnalyst",
+            system_message=jira_bug_analyst.build(
+                project_key=JIRA_PROJECT_KEY,
+                project_name=JIRA_PROJECT_NAME,
+            ),
+            workbench=jira_mcp,
         )
 
         result = await agent.run(
             task=f"""
-                Find all open bugs in Jira project {JIRA_PROJECT_KEY}.
+Retrieve and analyse the most recent 5 bugs from the {JIRA_PROJECT_NAME} project
+(Jira key: {JIRA_PROJECT_KEY}).
 
-                You MUST use jira_search with this JQL:
+Use this JQL to fetch them:
+    project = {JIRA_PROJECT_KEY} AND issuetype = Bug
+    AND status != Done ORDER BY created DESC
 
-                project = {JIRA_PROJECT_KEY} AND issuetype = Bug
-                AND status != Done ORDER BY priority DESC
-
-                After retrieving the bugs, produce a QA defect analysis report in this format:
-
-                ## Defect Summary
-
-                For each bug:
-                - Issue Key:
-                - Summary:
-                - Priority:
-                - Status:
-                - QA Impact:
-                - Suggested Regression Tests:
-
-                ## QA Risk Assessment
-                - High risk areas:
-                - Recommended regression coverage:
-                - Testing recommendations:
-                """,
+After retrieving the bugs:
+1. Identify recurring issues or common patterns across the defects.
+2. Design a detailed smoke test user flow that covers the core application features
+   most affected by these bugs.
+3. Output the final step-by-step smoke test scenario.
+4. End your response with: HANDOFF TO AUTOMATION
+""",
         )
 
     return result.messages[-1].content
