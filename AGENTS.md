@@ -6,10 +6,10 @@ This framework contains **two independent AI-powered pipelines**, each made
 of one or more agents that communicate by passing plain text from one to the
 next. Both pipelines are built from the same two core classes:
 
-| Class          | File                      | Role                                                                                           |
-| -------------- | ------------------------- | ---------------------------------------------------------------------------------------------- |
-| `AgentFactory` | `agents/agent_factory.py` | Creates any `AssistantAgent` — inject a model client once, build agents from prompts           |
-| `MCPConfig`    | `agents/mcp_config.py`    | Central config — returns a Gemini/Groq model client, Jira MCP params, or Playwright MCP params |
+| Class          | File                      | Role                                                                                      |
+| -------------- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| `AgentFactory` | `agents/agent_factory.py` | Creates any `AssistantAgent` — inject a model client once, build agents from prompts      |
+| `MCPConfig`    | `agents/mcp_config.py`    | Central config — returns a Gemini model client, Jira MCP params, or Playwright MCP params |
 
 ---
 
@@ -145,12 +145,10 @@ agents/
 
 | Provider | Env var          | Free limit | Notes                                                        |
 | -------- | ---------------- | ---------- | ------------------------------------------------------------ |
-| Groq     | `GROQ_API_KEY`   | 20k TPM    | `llama-3.1-8b-instant` — fast, good tool use                 |
 | Gemini   | `GEMINI_API_KEY` | 1M TPM     | `gemini-1.5-flash` — use aistudio.google.com key (`AIza...`) |
 | OpenAI   | `OPENAI_API_KEY` | Paid       | `OPENAI_MODEL` — used only by AIFailureAgent                 |
 
-`MCPConfig.default_client()` selects automatically: **Groq first, then Gemini**.
-To force Gemini: comment out `GROQ_API_KEY` in `.env`.
+`MCPConfig.default_client()`
 
 > **Gemini model rules**: use bare names (`gemini-1.5-flash`, `gemini-2.0-flash`).
 > Never use `models/` prefix or `*-lite`/`*-latest` variants — they break tool calling.
@@ -176,22 +174,17 @@ To force Gemini: comment out `GROQ_API_KEY` in `.env`.
 
 ### Swap the model
 
-Replace `MCPConfig.default_client()` with `MCPConfig.gemini_client()` or
-`MCPConfig.groq_client()` directly — the factory and all agents are model-agnostic.
-
----
+## Replace `MCPConfig.default_client()` with `MCPConfig.gemini_client()` or
 
 ## Environment variables required
 
-| Variable         | Used by                                           |
-| ---------------- | ------------------------------------------------- |
-| `GROQ_API_KEY`   | All Groq-powered agents (Pipeline 1)              |
-| `GROQ_MODEL`     | Groq model name (default: `llama-3.1-8b-instant`) |
-| `GEMINI_API_KEY` | All Gemini-powered agents (Pipeline 1 fallback)   |
-| `GEMINI_MODEL`   | Gemini model name (default: `gemini-1.5-flash`)   |
-| `JIRA_URL`       | JiraBugAnalyser (Jira MCP)                        |
-| `JIRA_USERNAME`  | JiraBugAnalyser (Jira MCP)                        |
-| `JIRA_API_TOKEN` | JiraBugAnalyser (Jira MCP)                        |
-| `OPENAI_API_KEY` | AIFailureAgent (Pipeline 2)                       |
-| `OPENAI_MODEL`   | AIFailureAgent model name                         |
-| `BASE_URL`       | PlaywrightAgent (app under test)                  |
+| Variable         | Used by                                         |
+| ---------------- | ----------------------------------------------- |
+| `GEMINI_API_KEY` | All Gemini-powered agents (Pipeline 1 fallback) |
+| `GEMINI_MODEL`   | Gemini model name (default: `gemini-1.5-flash`) |
+| `JIRA_URL`       | JiraBugAnalyser (Jira MCP)                      |
+| `JIRA_USERNAME`  | JiraBugAnalyser (Jira MCP)                      |
+| `JIRA_API_TOKEN` | JiraBugAnalyser (Jira MCP)                      |
+| `OPENAI_API_KEY` | AIFailureAgent (Pipeline 2)                     |
+| `OPENAI_MODEL`   | AIFailureAgent model name                       |
+| `BASE_URL`       | PlaywrightAgent (app under test)                |

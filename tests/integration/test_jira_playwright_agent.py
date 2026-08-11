@@ -10,7 +10,7 @@ Excluded from the default CI run — run explicitly with:
 
 or run the pipeline directly:
 
-    python -m agents.jira_playwright_pipeline
+    python -m agents.pipelines.jira_playwright
 """
 
 import asyncio

@@ -15,17 +15,19 @@ if not BASE_URL:
 DEFAULT_TIMEOUT = int(os.getenv("DEFAULT_TIMEOUT", 5000))
 DEFAULT_NAVIGATION_TIMEOUT = int(os.getenv("DEFAULT_NAVIGATION_TIMEOUT", 10000))
 FRAMEWORK = os.getenv("FRAMEWORK", "Playwright")
-
 ENVIRONMENT = os.getenv("ENVIRONMENT", "QA")
 
+# AI model keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL")  # OpenAI agents
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")  # Gemini agents
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")  # Groq agents (20k TPM free)
+# AI model names (with sensible defaults)
+OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
 
+# Jira
 JIRA_URL = os.getenv("JIRA_URL")
 JIRA_USERNAME = os.getenv("JIRA_USERNAME")
 JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")

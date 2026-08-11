@@ -30,7 +30,6 @@ from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
 load_dotenv()
 
-
 async def run(test_execution_report: str) -> str:
     """Post test results back to Jira as comments on the relevant issues.
 
@@ -53,7 +52,7 @@ async def run(test_execution_report: str) -> str:
             name="JiraReporter",
             system_message=jira_reporter_prompt.build(project_key=JIRA_PROJECT_KEY),
             workbench=jira_mcp,
-            reflect_on_tool_use=True,
+            reflect_on_tool_use=False,  # disabled — avoids empty-response errors with some models
         )
 
         result = await agent.run(
