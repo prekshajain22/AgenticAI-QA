@@ -1,6 +1,5 @@
 """Unit tests for agents/prompts/ (prompt template modules)."""
 
-import pytest
 
 from agents.prompts import jira_bug_analyst, playwright_automation
 

@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-from autogen_agentchat.agents import AssistantAgent
-
 from agents.agent_factory import AgentFactory
 
 
