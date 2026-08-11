@@ -131,7 +131,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const d = $json;\nconst bugSection = d.bug_analysis\n  ? d.bug_analysis\n  : 'No bug analysis available.';\nconst testSection = d.test_execution\n  ? d.test_execution\n  : 'No test execution report available.';\nconst jiraSection = d.jira_update\n  ? d.jira_update\n  : 'No Jira comments posted.';\nreturn {\n  json: {\n    status:         d.status,\n    job_id:         d.job_id,\n    started_at:     d.started_at,\n    finished_at:    d.finished_at,\n    bug_analysis:   bugSection,\n    test_execution: testSection,\n    jira_update:    jiraSection\n  }\n};"
+        "jsCode": "const d = $json;\nreturn {\n  json: {\n    status:         d.status,\n    job_id:         d.job_id,\n    started_at:     d.started_at,\n    finished_at:    d.finished_at,\n    bug_analysis:   d.bug_analysis || 'No bug analysis available.',\n    test_execution: d.test_execution || 'No test execution report available.',\n    jira_update:    d.jira_update || 'No Jira comments posted.'\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -141,16 +141,35 @@
     },
     {
       "parameters": {
+        "url": "http://host.containers.internal:5001/download-report",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-880, -1408],
+      "id": "e1f2a3b4-c5d6-7890-efab-901234567890",
+      "name": "Download Pipeline PDF"
+    },
+    {
+      "parameters": {
         "fromEmail": "prekshajain22@gmail.com",
         "toEmail": "prekjain@emeal.nttdata.com",
-        "subject": "=Jira Pipeline: {{ $json.status.toUpperCase() }} | {{ new Date($json.finished_at).toLocaleDateString() }}",
-        "html": "=<h2>Jira Bug Verification Pipeline Report</h2>\n<p><b>Status:</b> {{ $json.status.toUpperCase() }}</p>\n<p><b>Job ID:</b> {{ $json.job_id }}</p>\n<p><b>Started:</b> {{ $json.started_at }}</p>\n<p><b>Finished:</b> {{ $json.finished_at }}</p>\n<hr>\n<h3>Stage 1 — Jira Bug Analysis</h3>\n<pre>{{ $json.bug_analysis }}</pre>\n<hr>\n<h3>Stage 2 — Playwright Browser Execution</h3>\n<pre>{{ $json.test_execution }}</pre>\n<hr>\n<h3>Stage 3 — Jira Comments Posted</h3>\n<pre>{{ $json.jira_update }}</pre>",
-        "options": {}
+        "subject": "=Jira Pipeline: {{ $('Format Pipeline Results').item.json.status.toUpperCase() }} | {{ new Date($('Format Pipeline Results').item.json.finished_at).toLocaleDateString() }}",
+        "html": "=<h2>Jira Bug Verification Pipeline Report</h2>\n<p><b>Status:</b> {{ $('Format Pipeline Results').item.json.status.toUpperCase() }}</p>\n<p><b>Job ID:</b> {{ $('Format Pipeline Results').item.json.job_id }}</p>\n<p><b>Started:</b> {{ $('Format Pipeline Results').item.json.started_at }}</p>\n<p><b>Finished:</b> {{ $('Format Pipeline Results').item.json.finished_at }}</p>\n<hr>\n<h3>Stage 1 — Jira Bug Analysis</h3>\n<pre>{{ $('Format Pipeline Results').item.json.bug_analysis }}</pre>\n<hr>\n<h3>Stage 2 — Playwright Browser Execution</h3>\n<pre>{{ $('Format Pipeline Results').item.json.test_execution }}</pre>\n<hr>\n<h3>Stage 3 — Jira Comments Posted</h3>\n<pre>{{ $('Format Pipeline Results').item.json.jira_update }}</pre>\n<p>Full report attached as PDF.</p>",
+        "options": {
+          "fileAttachments": "data"
+        }
       },
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
-      "position": [-880, -1408],
-      "id": "e1f2a3b4-c5d6-7890-efab-901234567890",
+      "position": [-688, -1408],
+      "id": "f2a3b4c5-d6e7-8901-fabc-012345678901",
       "name": "Send Pipeline Report",
       "webhookId": "7609gdd3-d1c3-5bc6-c3e9-e469b9fc4b37",
       "credentials": {
@@ -171,7 +190,7 @@
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [-1088, -1296],
-      "id": "f2a3b4c5-d6e7-8901-fabc-012345678901",
+      "id": "a3b4c5d6-e7f8-9012-abcd-123456789012",
       "name": "Send Error Alert",
       "credentials": {
         "smtp": {
@@ -275,6 +294,17 @@
       ]
     },
     "Format Pipeline Results": {
+      "main": [
+        [
+          {
+            "node": "Download Pipeline PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Pipeline PDF": {
       "main": [
         [
           {

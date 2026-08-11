@@ -22,7 +22,7 @@ from flask import Flask, jsonify, make_response, request, send_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from service.pdf_report_generator import generate_pdf
+from service.pdf_report_generator import generate_pdf, generate_pipeline_pdf
 
 app = Flask(__name__)
 
@@ -294,14 +294,40 @@ def _run_pipeline_in_background(job_id: str) -> None:
     log.info("[pipeline:%s] Starting…", job_id)
     try:
         results = asyncio.run(run_pipeline())
+        finished_at = datetime.now(timezone.utc).isoformat()
+
+        # Generate PDF
+        pdf_path_str: str | None = None
+        try:
+            run_dir = REPORTS_DIR / job_id
+            run_dir.mkdir(parents=True, exist_ok=True)
+            pdf_file = run_dir / "Jira_Pipeline_Report.pdf"
+            pipeline_data = {
+                "job_id": job_id,
+                "status": "complete",
+                "started_at": _pipeline_job.get("started_at", ""),  # type: ignore[union-attr]
+                "finished_at": finished_at,
+                "bug_analysis": results.get("bug_analysis", ""),
+                "test_execution": results.get("test_execution", ""),
+                "jira_update": results.get("jira_update", ""),
+            }
+            generate_pipeline_pdf(pipeline_data, output_path=pdf_file)
+            pdf_path_str = str(pdf_file.relative_to(PROJECT_ROOT))
+            with _latest_lock:
+                _latest_pdf = {"path": pdf_file, "run_id": job_id}
+            log.info("[pipeline:%s] PDF: %s", job_id, pdf_file)
+        except Exception as pdf_err:
+            log.warning("[pipeline:%s] PDF generation failed: %s", job_id, pdf_err)
+
         with _pipeline_lock:
-            _pipeline_job.update(
-                {  # type: ignore[union-attr]
+            _pipeline_job.update(  # type: ignore[union-attr]
+                {
                     "status": "complete",
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "finished_at": finished_at,
                     "bug_analysis": results.get("bug_analysis", ""),
                     "test_execution": results.get("test_execution", ""),
                     "jira_update": results.get("jira_update", ""),
+                    "pdf_report": pdf_path_str,
                 }
             )
         log.info("[pipeline:%s] Complete.", job_id)

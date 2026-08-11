@@ -247,3 +247,116 @@ def generate_pdf(data, output_path=None, project_root=None):
     doc.build(content)
 
     return output_path
+
+
+def generate_pipeline_pdf(data: dict, output_path=None) -> Path:
+    """Generate a PDF report for the Jira → Playwright pipeline results.
+
+    Parameters
+    ----------
+    data:
+        Dict with keys: job_id, status, started_at, finished_at,
+        bug_analysis, test_execution, jira_update.
+    output_path:
+        Where to write the PDF.  Defaults to
+        output/reports/Jira_Pipeline_Report.pdf.
+    """
+    if output_path is None:
+        output_path = Path("output/reports/Jira_Pipeline_Report.pdf")
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+        title="Jira Pipeline Report",
+        author="AI Test Orchestrator",
+    )
+
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle(
+        "Title",
+        parent=styles["Title"],
+        fontSize=20,
+        textColor=colors.HexColor("#1a237e"),
+        spaceAfter=4,
+    )
+    subtitle_style = ParagraphStyle(
+        "Subtitle",
+        parent=styles["Normal"],
+        fontSize=11,
+        textColor=GREY_COLOR,
+        spaceAfter=2,
+    )
+    heading_style = ParagraphStyle(
+        "Heading",
+        parent=styles["Heading2"],
+        fontSize=13,
+        textColor=colors.HexColor("#1a237e"),
+        spaceBefore=10,
+        spaceAfter=4,
+    )
+    body_style = ParagraphStyle(
+        "Body",
+        parent=styles["Normal"],
+        fontSize=9,
+        textColor=colors.HexColor("#212121"),
+        spaceAfter=2,
+        fontName="Courier",
+    )
+    meta_style = ParagraphStyle(
+        "Meta",
+        parent=styles["Normal"],
+        fontSize=10,
+        textColor=GREY_COLOR,
+        spaceAfter=3,
+    )
+
+    content = []
+
+    content.append(Paragraph("Jira Bug Verification Pipeline Report", title_style))
+    content.append(
+        Paragraph("AI-powered: Jira Analysis → Playwright Execution → Jira Update", subtitle_style)
+    )
+    content.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a237e")))
+    content.append(Spacer(1, 6 * mm))
+
+    # ── Meta ─────────────────────────────────────────────────────────────
+    status = data.get("status", "unknown").upper()
+    status_color = PASS_COLOR if status == "COMPLETE" else FAIL_COLOR
+    status_style = ParagraphStyle(
+        "Status",
+        parent=styles["Normal"],
+        fontSize=14,
+        textColor=status_color,
+        spaceAfter=4,
+    )
+    content.append(Paragraph(f"Status: {status}", status_style))
+    content.append(Paragraph(f"Job ID: {data.get('job_id', 'N/A')}", meta_style))
+    content.append(Paragraph(f"Started:  {data.get('started_at', 'N/A')}", meta_style))
+    content.append(Paragraph(f"Finished: {data.get('finished_at', 'N/A')}", meta_style))
+    content.append(
+        Paragraph(f"Generated: {datetime.now().strftime('%d-%b-%Y  %H:%M')}", meta_style)
+    )
+    content.append(Spacer(1, 4 * mm))
+
+    def _add_section(title: str, text: str) -> None:
+        content.append(Paragraph(title, heading_style))
+        content.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#bbbbbb")))
+        content.append(Spacer(1, 2 * mm))
+        for line in (text or "No output captured.").splitlines():
+            safe = line.replace("&", "&").replace("<", "<").replace(">", ">")
+            content.append(Paragraph(safe or "&nbsp;", body_style))
+        content.append(Spacer(1, 4 * mm))
+
+    _add_section("Stage 1 — Jira Bug Analysis", data.get("bug_analysis", ""))
+    _add_section("Stage 2 — Playwright Browser Execution", data.get("test_execution", ""))
+    _add_section("Stage 3 — Jira Comments Posted", data.get("jira_update", ""))
+
+    doc.build(content)
+    return output_path

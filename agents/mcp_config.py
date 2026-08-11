@@ -114,7 +114,12 @@ class MCPConfig:
 
     @staticmethod
     def playwright_server_params() -> StdioServerParams:
-        """StdioServerParams for the Playwright MCP server (npx @playwright/mcp@latest)."""
+        """StdioServerParams for the Playwright MCP server (npx @playwright/mcp@latest).
+
+        Note: The @playwright/mcp stdio server always runs headless — it communicates
+        over stdio and does not support a visible browser window.  To inspect what
+        the agent is doing, check the snapshot files written to .playwright-mcp/.
+        """
         return StdioServerParams(
             command="npx",
             args=["@playwright/mcp@latest"],
