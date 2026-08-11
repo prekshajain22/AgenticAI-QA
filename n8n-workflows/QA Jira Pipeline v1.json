@@ -1,0 +1,303 @@
+{
+  "name": "QA Jira Pipeline v1 — Bug Analysis + Playwright + Jira Update",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-2064, -1408],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.containers.internal:5001/run-jira-pipeline",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-1888, -1408],
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Start Jira Pipeline"
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": 5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-1712, -1408],
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Wait 5 minutes"
+    },
+    {
+      "parameters": {
+        "url": "http://host.containers.internal:5001/pipeline-status",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-1536, -1408],
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "name": "Poll Pipeline Status"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "complete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-1296, -1408],
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "name": "Pipeline Complete?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "error",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-1296, -1296],
+      "id": "b8c9d0e1-f2a3-4567-bcde-678901234567",
+      "name": "Pipeline Error?"
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": 5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-1296, -1520],
+      "id": "c9d0e1f2-a3b4-5678-cdef-789012345678",
+      "name": "Still Running — Wait More"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const d = $json;\nconst bugSection = d.bug_analysis\n  ? d.bug_analysis\n  : 'No bug analysis available.';\nconst testSection = d.test_execution\n  ? d.test_execution\n  : 'No test execution report available.';\nconst jiraSection = d.jira_update\n  ? d.jira_update\n  : 'No Jira comments posted.';\nreturn {\n  json: {\n    status:         d.status,\n    job_id:         d.job_id,\n    started_at:     d.started_at,\n    finished_at:    d.finished_at,\n    bug_analysis:   bugSection,\n    test_execution: testSection,\n    jira_update:    jiraSection\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1088, -1408],
+      "id": "d0e1f2a3-b4c5-6789-defa-890123456789",
+      "name": "Format Pipeline Results"
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "=Jira Pipeline: {{ $json.status.toUpperCase() }} | {{ new Date($json.finished_at).toLocaleDateString() }}",
+        "html": "=<h2>Jira Bug Verification Pipeline Report</h2>\n<p><b>Status:</b> {{ $json.status.toUpperCase() }}</p>\n<p><b>Job ID:</b> {{ $json.job_id }}</p>\n<p><b>Started:</b> {{ $json.started_at }}</p>\n<p><b>Finished:</b> {{ $json.finished_at }}</p>\n<hr>\n<h3>Stage 1 — Jira Bug Analysis</h3>\n<pre>{{ $json.bug_analysis }}</pre>\n<hr>\n<h3>Stage 2 — Playwright Browser Execution</h3>\n<pre>{{ $json.test_execution }}</pre>\n<hr>\n<h3>Stage 3 — Jira Comments Posted</h3>\n<pre>{{ $json.jira_update }}</pre>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [-880, -1408],
+      "id": "e1f2a3b4-c5d6-7890-efab-901234567890",
+      "name": "Send Pipeline Report",
+      "webhookId": "7609gdd3-d1c3-5bc6-c3e9-e469b9fc4b37",
+      "credentials": {
+        "smtp": {
+          "id": "KZ1HplfZyon3Zx8z",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "=Jira Pipeline ERROR | {{ new Date().toLocaleDateString() }}",
+        "html": "=<h2>Jira Pipeline Failed</h2>\n<p><b>Job ID:</b> {{ $json.job_id }}</p>\n<p><b>Started:</b> {{ $json.started_at }}</p>\n<p><b>Error:</b></p>\n<pre>{{ $json.error }}</pre>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [-1088, -1296],
+      "id": "f2a3b4c5-d6e7-8901-fabc-012345678901",
+      "name": "Send Error Alert",
+      "credentials": {
+        "smtp": {
+          "id": "KZ1HplfZyon3Zx8z",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Start Jira Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Jira Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 minutes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Poll Pipeline Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Pipeline Status": {
+      "main": [
+        [
+          {
+            "node": "Pipeline Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pipeline Complete?": {
+      "main": [
+        [
+          {
+            "node": "Format Pipeline Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pipeline Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pipeline Error?": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Still Running — Wait More",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Running — Wait More": {
+      "main": [
+        [
+          {
+            "node": "Poll Pipeline Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pipeline Results": {
+      "main": [
+        [
+          {
+            "node": "Send Pipeline Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "9a68156g-8890-5a20-aafb-753c737c0345",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7bd9bc721d522433b882204cf8a7b5b941c3435fab2b9d23a33f5aaf704af7cd"
+  },
+  "nodeGroups": [],
+  "id": "pMnTssQj53XVWPHf",
+  "tags": []
+}

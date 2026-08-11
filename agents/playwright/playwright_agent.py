@@ -96,8 +96,9 @@ async def run(
             workbench=pw_mcp,
         )
 
-        result = await agent.run(
-            task=f"""
+        try:
+            result = await agent.run(
+                task=f"""
 Execute the following smoke test scenario using the Playwright browser tools.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -114,7 +115,14 @@ Execute every step completely.  Report ✅ PASS or ❌ FAIL for each step.
 Take screenshots at key checkpoints.
 End with a final summary and write: TESTING COMPLETE
 """,
-        )
+            )
+        except TypeError as exc:
+            raise RuntimeError(
+                "The LLM API returned an empty response (choices=None). "
+                "The model is likely overloaded or rate-limited.\n"
+                "Fix: change OPENROUTER_MODEL in .env\n"
+                f"Original error: {exc}"
+            ) from exc
 
     return result.messages[-1].content
 

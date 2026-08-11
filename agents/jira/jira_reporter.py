@@ -30,6 +30,7 @@ from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
 load_dotenv()
 
+
 async def run(test_execution_report: str) -> str:
     """Post test results back to Jira as comments on the relevant issues.
 
@@ -55,8 +56,9 @@ async def run(test_execution_report: str) -> str:
             reflect_on_tool_use=False,  # disabled — avoids empty-response errors with some models
         )
 
-        result = await agent.run(
-            task=f"""
+        try:
+            result = await agent.run(
+                task=f"""
 Post test results to Jira for project {JIRA_PROJECT_NAME} ({JIRA_PROJECT_KEY}).
 
 Below is the automated test execution report from the Playwright agent.
@@ -71,7 +73,14 @@ For each issue key found:
 2. Call jira_add_comment with the issue key and the result comment.
 3. After all comments are posted, write: JIRA UPDATED
 """,
-        )
+            )
+        except TypeError as exc:
+            raise RuntimeError(
+                "The LLM API returned an empty response (choices=None). "
+                "The model is likely overloaded or rate-limited.\n"
+                "Fix: change OPENROUTER_MODEL in .env\n"
+                f"Original error: {exc}"
+            ) from exc
 
     return result.messages[-1].content
 

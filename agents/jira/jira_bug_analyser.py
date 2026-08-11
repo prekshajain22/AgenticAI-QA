@@ -95,8 +95,9 @@ async def run() -> str:
             reflect_on_tool_use=False,  # disabled — avoids thought_signature with Gemini 2.5+
         )
 
-        result = await agent.run(
-            task=f"""
+        try:
+            result = await agent.run(
+                task=f"""
 Retrieve and analyse the most recent 5 bugs from the {JIRA_PROJECT_NAME} project
 (Jira key: {JIRA_PROJECT_KEY}).
 
@@ -106,7 +107,15 @@ Use this JQL to fetch them:
 
 After retrieving the bugs, produce the analysis report ending with: HANDOFF TO AUTOMATION
 """,
-        )
+            )
+        except TypeError as exc:
+            raise RuntimeError(
+                "The LLM API returned an empty response (choices=None). "
+                "The model is likely overloaded or rate-limited.\n"
+                "Fix: change OPENROUTER_MODEL in .env to a less congested model, e.g.:\n"
+                "  OPENROUTER_MODEL=google/gemini-2.0-flash-exp:free\n"
+                f"Original error: {exc}"
+            ) from exc
 
     output = result.messages[-1].content
 

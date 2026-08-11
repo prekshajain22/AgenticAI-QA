@@ -279,6 +279,131 @@ def run_tests():
 
 
 # ---------------------------------------------------------------------------
+# Jira → Playwright pipeline job store
+# ---------------------------------------------------------------------------
+_pipeline_job: dict | None = None
+_pipeline_lock = threading.Lock()
+
+
+def _run_pipeline_in_background(job_id: str) -> None:
+    """Run the 3-stage Jira→Playwright pipeline in a background thread."""
+    import asyncio
+
+    from agents.pipelines.jira_playwright import run as run_pipeline
+
+    log.info("[pipeline:%s] Starting…", job_id)
+    try:
+        results = asyncio.run(run_pipeline())
+        with _pipeline_lock:
+            _pipeline_job.update(
+                {  # type: ignore[union-attr]
+                    "status": "complete",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "bug_analysis": results.get("bug_analysis", ""),
+                    "test_execution": results.get("test_execution", ""),
+                    "jira_update": results.get("jira_update", ""),
+                }
+            )
+        log.info("[pipeline:%s] Complete.", job_id)
+    except Exception as exc:
+        tb = traceback.format_exc()
+        log.error("[pipeline:%s] ERROR:\n%s", job_id, tb)
+        with _pipeline_lock:
+            _pipeline_job.update(
+                {  # type: ignore[union-attr]
+                    "status": "error",
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "error": str(exc),
+                }
+            )
+
+
+# ---------------------------------------------------------------------------
+# Route: POST /run-jira-pipeline  (async background — returns 202 immediately)
+# ---------------------------------------------------------------------------
+
+
+@app.route("/run-jira-pipeline", methods=["POST"])
+def run_jira_pipeline():
+    """Start the Jira → Playwright → Jira update pipeline in the background.
+
+    Response 202 (started):
+        { "job_id": "<uuid>", "status": "running" }
+
+    Response 409 (already running):
+        { "error": "Pipeline already running", "job_id": "<uuid>" }
+    """
+    global _pipeline_job
+
+    with _pipeline_lock:
+        if _pipeline_job and _pipeline_job.get("status") == "running":
+            return jsonify(
+                {"error": "Pipeline already running", "job_id": _pipeline_job["job_id"]}
+            ), 409
+
+        job_id = str(uuid.uuid4())
+        _pipeline_job = {
+            "job_id": job_id,
+            "status": "running",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "finished_at": None,
+            "bug_analysis": None,
+            "test_execution": None,
+            "jira_update": None,
+            "error": None,
+        }
+
+    thread = threading.Thread(
+        target=_run_pipeline_in_background,
+        args=(job_id,),
+        daemon=True,
+        name=f"jira-pipeline-{job_id[:8]}",
+    )
+    thread.start()
+    log.info("[pipeline:%s] Background thread started.", job_id)
+    return jsonify({"job_id": job_id, "status": "running"}), 202
+
+
+# ---------------------------------------------------------------------------
+# Route: GET /pipeline-status  (poll for pipeline results)
+# ---------------------------------------------------------------------------
+
+
+@app.route("/pipeline-status", methods=["GET"])
+def pipeline_status():
+    """Poll the status of the most recent Jira pipeline run.
+
+    Response 200 while running:
+        { "job_id": "...", "status": "running", "started_at": "..." }
+
+    Response 200 when complete:
+        {
+            "job_id":         "...",
+            "status":         "complete",
+            "started_at":     "...",
+            "finished_at":    "...",
+            "bug_analysis":   "...",   # Stage 1 output
+            "test_execution": "...",   # Stage 2 output
+            "jira_update":    "..."    # Stage 3 output
+        }
+
+    Response 200 on error:
+        { "job_id": "...", "status": "error", "error": "..." }
+
+    Response 404 if no pipeline has been triggered yet.
+    """
+    with _pipeline_lock:
+        job = dict(_pipeline_job) if _pipeline_job else None
+
+    if job is None:
+        return make_response(
+            jsonify({"error": "No pipeline run yet. POST /run-jira-pipeline first."}), 404
+        )
+
+    return jsonify(job), 200
+
+
+# ---------------------------------------------------------------------------
 # Route: GET /health
 # ---------------------------------------------------------------------------
 
