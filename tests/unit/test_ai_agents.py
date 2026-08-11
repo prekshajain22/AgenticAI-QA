@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, mock_open, patch
 
 import pytest
 
-from agents.ai_failure_agent import AIFailureAgent
-from agents.report_analysis_agent import ReportAnalysisAgent
+from agents.analysis.ai_failure_agent import AIFailureAgent
+from agents.analysis.report_analysis_agent import ReportAnalysisAgent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -26,7 +26,7 @@ def _make_agent(tests):
     }
     raw = json.dumps(report)
     with patch("builtins.open", mock_open(read_data=raw)):
-        with patch("agents.report_analysis_agent.Path"):
+        with patch("agents.analysis.report_analysis_agent.Path"):
             return ReportAnalysisAgent("fake/path.json")
 
 
@@ -41,7 +41,7 @@ def test_analyse_returns_string():
     # Patch the async helper so no real OpenAI call is made.
     # AsyncMock returns a coroutine that asyncio.run() can drive normally.
     with patch(
-        "agents.ai_failure_agent._call_agent",
+        "agents.analysis.ai_failure_agent._call_agent",
         new_callable=AsyncMock,
         return_value="AI analysis result",
     ):
@@ -60,7 +60,7 @@ def test_analyse_includes_test_name():
     """The prompt sent to the AI references the test name."""
     agent = AIFailureAgent()
     with patch(
-        "agents.ai_failure_agent._call_agent",
+        "agents.analysis.ai_failure_agent._call_agent",
         new_callable=AsyncMock,
         return_value="ok",
     ) as mock_call:
@@ -80,7 +80,7 @@ def test_analyse_includes_error():
     """The prompt sent to the AI references the error message."""
     agent = AIFailureAgent()
     with patch(
-        "agents.ai_failure_agent._call_agent",
+        "agents.analysis.ai_failure_agent._call_agent",
         new_callable=AsyncMock,
         return_value="ok",
     ) as mock_call:

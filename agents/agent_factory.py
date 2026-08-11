@@ -54,7 +54,7 @@ class AgentFactory:
         self,
         model_client: Any,
         *,
-        reflect_on_tool_use: bool = True,
+        reflect_on_tool_use: bool = False,
     ) -> None:
         self._model_client = model_client
         self._default_reflect = reflect_on_tool_use

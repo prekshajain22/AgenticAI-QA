@@ -44,24 +44,25 @@ async def run() -> str:
                 project_name=JIRA_PROJECT_NAME,
             ),
             workbench=jira_mcp,
+            reflect_on_tool_use=True,  # needed so model synthesises tool results, not echoes them
         )
 
         result = await agent.run(
             task=f"""
-Retrieve and analyse the most recent 5 bugs from the {JIRA_PROJECT_NAME} project
-(Jira key: {JIRA_PROJECT_KEY}).
+            Retrieve and analyse the most recent 5 bugs from the {JIRA_PROJECT_NAME} project
+            (Jira key: {JIRA_PROJECT_KEY}).
 
-Use this JQL to fetch them:
-    project = {JIRA_PROJECT_KEY} AND issuetype = Bug
-    AND status != Done ORDER BY created DESC
+            Use this JQL to fetch them:
+                project = {JIRA_PROJECT_KEY} AND issuetype = Bug
+                AND status != Done ORDER BY created DESC
 
-After retrieving the bugs:
-1. Identify recurring issues or common patterns across the defects.
-2. Design a detailed smoke test user flow that covers the core application features
-   most affected by these bugs.
-3. Output the final step-by-step smoke test scenario.
-4. End your response with: HANDOFF TO AUTOMATION
-""",
+            After retrieving the bugs:
+            1. Identify recurring issues or common patterns across the defects.
+            2. Design a detailed smoke test user flow that covers the core application features
+            most affected by these bugs.
+            3. Output the final step-by-step smoke test scenario.
+            4. End your response with: HANDOFF TO AUTOMATION
+            """,
         )
 
     return result.messages[-1].content

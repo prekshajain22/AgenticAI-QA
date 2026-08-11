@@ -18,7 +18,7 @@ import os
 
 import pytest
 
-from agents.jira_playwright_pipeline import run
+from agents.pipelines.jira_playwright import run
 
 _JIRA_CREDS_AVAILABLE = all(os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN"))
 _GEMINI_KEY_AVAILABLE = bool(os.getenv("GEMINI_API_KEY"))
