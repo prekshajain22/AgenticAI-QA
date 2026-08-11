@@ -51,9 +51,7 @@ class MCPConfig:
             If ``GEMINI_API_KEY`` is not set in the environment.
         """
         if not GEMINI_API_KEY:
-            raise ValueError(
-                "GEMINI_API_KEY is not set. Add it to your .env file."
-            )
+            raise ValueError("GEMINI_API_KEY is not set. Add it to your .env file.")
         return OpenAIChatCompletionClient(
             model=GEMINI_MODEL,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -147,8 +145,7 @@ class MCPConfig:
         ]
         if missing:
             raise ValueError(
-                f"Missing Jira credentials: {', '.join(missing)}. "
-                "Add them to your .env file."
+                f"Missing Jira credentials: {', '.join(missing)}. Add them to your .env file."
             )
         return StdioServerParams(
             command="uvx",

@@ -26,11 +26,15 @@ async def main() -> None:
     jira_username = os.getenv("JIRA_USERNAME")
     jira_api_token = os.getenv("JIRA_API_TOKEN")
 
-    missing = [k for k, v in {
-        "JIRA_URL": jira_url,
-        "JIRA_USERNAME": jira_username,
-        "JIRA_API_TOKEN": jira_api_token,
-    }.items() if not v]
+    missing = [
+        k
+        for k, v in {
+            "JIRA_URL": jira_url,
+            "JIRA_USERNAME": jira_username,
+            "JIRA_API_TOKEN": jira_api_token,
+        }.items()
+        if not v
+    ]
 
     if missing:
         print(f"❌ Missing env vars: {', '.join(missing)}")

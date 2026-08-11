@@ -18,9 +18,7 @@ import pytest
 
 from agents.jira.bug_analyser import run
 
-_JIRA_CREDS_AVAILABLE = all(
-    os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN")
-)
+_JIRA_CREDS_AVAILABLE = all(os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN"))
 
 
 @pytest.mark.integration

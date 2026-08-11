@@ -20,9 +20,7 @@ import pytest
 
 from agents.jira_playwright_pipeline import run
 
-_JIRA_CREDS_AVAILABLE = all(
-    os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN")
-)
+_JIRA_CREDS_AVAILABLE = all(os.getenv(k) for k in ("JIRA_URL", "JIRA_USERNAME", "JIRA_API_TOKEN"))
 _GEMINI_KEY_AVAILABLE = bool(os.getenv("GEMINI_API_KEY"))
 
 
@@ -57,12 +55,10 @@ def test_jira_playwright_pipeline():
     # The Playwright agent should report at least one step outcome
     report_lower = test_execution.lower()
     has_outcome = any(
-        keyword in report_lower
-        for keyword in ("pass", "fail", "error", "skip", "testing complete")
+        keyword in report_lower for keyword in ("pass", "fail", "error", "skip", "testing complete")
     )
     assert has_outcome, (
-        "Execution report should contain step outcomes (pass/fail/error/skip) "
-        "or 'TESTING COMPLETE'"
+        "Execution report should contain step outcomes (pass/fail/error/skip) or 'TESTING COMPLETE'"
     )
 
 

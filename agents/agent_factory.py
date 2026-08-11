@@ -101,9 +101,7 @@ class AgentFactory:
             "model_client": self._model_client,
             "system_message": system_message,
             "reflect_on_tool_use": (
-                reflect_on_tool_use
-                if reflect_on_tool_use is not None
-                else self._default_reflect
+                reflect_on_tool_use if reflect_on_tool_use is not None else self._default_reflect
             ),
         }
 
