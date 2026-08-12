@@ -22,14 +22,30 @@ from flask import Flask, jsonify, make_response, request, send_file
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from config.settings import (
+    FLASK_HOST,
+    FLASK_PORT,
+    TEST_RUNNER_DOWNLOAD_PIPELINE_PDF_ENDPOINT,
+    TEST_RUNNER_DOWNLOAD_REPORT_ENDPOINT,
+    TEST_RUNNER_HEALTH_ENDPOINT,
+    TEST_RUNNER_JIRA_PIPELINE_REPORT_FILENAME,
+    TEST_RUNNER_LOGS_DIR,
+    TEST_RUNNER_OUTPUT_DIR,
+    TEST_RUNNER_PIPELINE_STATUS_ENDPOINT,
+    TEST_RUNNER_QA_REPORT_FILENAME,
+    TEST_RUNNER_REPORTS_DIR,
+    TEST_RUNNER_RUN_JIRA_PIPELINE_ENDPOINT,
+    TEST_RUNNER_RUN_TESTS_ENDPOINT,
+    TEST_RUNNER_SCREENSHOTS_DIR,
+)
 from service.pdf_report_generator import generate_pdf, generate_pipeline_pdf
 
 app = Flask(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
-OUTPUT_DIR = PROJECT_ROOT / "output"
-REPORTS_DIR = OUTPUT_DIR / "reports"
-LOGS_DIR = OUTPUT_DIR / "logs"
+OUTPUT_DIR = PROJECT_ROOT / TEST_RUNNER_OUTPUT_DIR
+REPORTS_DIR = OUTPUT_DIR / TEST_RUNNER_REPORTS_DIR
+LOGS_DIR = OUTPUT_DIR / TEST_RUNNER_LOGS_DIR
 
 # ---------------------------------------------------------------------------
 # Ensure output directories exist at import time (not just under __main__)
@@ -85,7 +101,7 @@ _latest_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 
-@app.route("/run-tests", methods=["POST"])
+@app.route(TEST_RUNNER_RUN_TESTS_ENDPOINT, methods=["POST"])
 def run_tests():
     """
     Run the full pytest suite and return results immediately.
@@ -180,8 +196,10 @@ def run_tests():
             name = test_fn.replace("test_", "").replace("_", " ").title()
             outcome = item.get("outcome", "unknown").upper()
 
-            # Screenshots are now saved to output/screenshots/
-            screenshot_path = f"output/screenshots/{test_fn}.png"
+            # Screenshots are now saved to the configured screenshots directory.
+            screenshot_path = (
+                f"{TEST_RUNNER_OUTPUT_DIR}/{TEST_RUNNER_SCREENSHOTS_DIR}/{test_fn}.png"
+            )
             screenshot_exists = (PROJECT_ROOT / screenshot_path).exists()
 
             all_tests.append(
@@ -255,7 +273,7 @@ def run_tests():
         }
 
         # ── PDF ──────────────────────────────────────────────────────────
-        pdf_path = run_dir / "QA_Execution_Report.pdf"
+        pdf_path = run_dir / TEST_RUNNER_QA_REPORT_FILENAME
         try:
             generate_pdf(payload, pdf_path, project_root=PROJECT_ROOT)
             payload["pdf_report"] = str(pdf_path.relative_to(PROJECT_ROOT))
@@ -303,7 +321,7 @@ def _run_pipeline_in_background(job_id: str) -> None:
         try:
             run_dir = REPORTS_DIR / job_id
             run_dir.mkdir(parents=True, exist_ok=True)
-            pdf_file = run_dir / "Jira_Pipeline_Report.pdf"
+            pdf_file = run_dir / TEST_RUNNER_JIRA_PIPELINE_REPORT_FILENAME
             pipeline_data = {
                 "job_id": job_id,
                 "status": "complete",
@@ -351,7 +369,7 @@ def _run_pipeline_in_background(job_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@app.route("/run-jira-pipeline", methods=["POST"])
+@app.route(TEST_RUNNER_RUN_JIRA_PIPELINE_ENDPOINT, methods=["POST"])
 def run_jira_pipeline():
     """Start the Jira → Playwright → Jira update pipeline in the background.
 
@@ -397,7 +415,7 @@ def run_jira_pipeline():
 # ---------------------------------------------------------------------------
 
 
-@app.route("/pipeline-status", methods=["GET"])
+@app.route(TEST_RUNNER_PIPELINE_STATUS_ENDPOINT, methods=["GET"])
 def pipeline_status():
     """Poll the status of the most recent Jira pipeline run.
 
@@ -436,7 +454,7 @@ def pipeline_status():
 # ---------------------------------------------------------------------------
 
 
-@app.route("/health", methods=["GET"])
+@app.route(TEST_RUNNER_HEALTH_ENDPOINT, methods=["GET"])
 def health():
     """Liveness probe."""
     return jsonify({"status": "ok"}), 200
@@ -454,7 +472,7 @@ _pipeline_pdf_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 
-@app.route("/download-report", methods=["GET"])
+@app.route(TEST_RUNNER_DOWNLOAD_REPORT_ENDPOINT, methods=["GET"])
 def download_latest_report():
     """Download the most recently generated PDF (pytest report OR pipeline report).
 
@@ -492,7 +510,7 @@ def download_latest_report():
 # ---------------------------------------------------------------------------
 
 
-@app.route("/download-pipeline-pdf", methods=["GET"])
+@app.route(TEST_RUNNER_DOWNLOAD_PIPELINE_PDF_ENDPOINT, methods=["GET"])
 def download_pipeline_pdf():
     """Download the PDF from the most recent Jira pipeline run."""
     with _pipeline_pdf_lock:
@@ -507,7 +525,7 @@ def download_pipeline_pdf():
     return send_file(
         latest["path"],
         as_attachment=True,
-        download_name="Jira_Pipeline_Report.pdf",
+        download_name=TEST_RUNNER_JIRA_PIPELINE_REPORT_FILENAME,
     )
 
 
@@ -516,10 +534,9 @@ def download_pipeline_pdf():
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    port = int(os.environ.get("FLASK_PORT", 5001))
     app.run(
-        host="0.0.0.0",
-        port=port,
+        host=FLASK_HOST,
+        port=FLASK_PORT,
         debug=False,
         use_reloader=False,
     )
