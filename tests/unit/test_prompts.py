@@ -34,11 +34,13 @@ def test_failure_analysis_build_returns_system_prompt():
 
 
 def test_failure_analysis_task_contains_test_and_error():
-    result = failure_analysis.task({
-        "test": "test_unique_name_xyz",
-        "error": "unique_error_abc",
-        "logs": ["log line 1"],
-    })
+    result = failure_analysis.task(
+        {
+            "test": "test_unique_name_xyz",
+            "error": "unique_error_abc",
+            "logs": ["log line 1"],
+        }
+    )
     assert "test_unique_name_xyz" in result
     assert "unique_error_abc" in result
     assert "log line 1" in result

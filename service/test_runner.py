@@ -471,7 +471,9 @@ def download_latest_report():
     candidates = [p for p in [pytest_pdf, pipeline_pdf] if p and p["path"].exists()]
     if not candidates:
         return make_response(
-            jsonify({"error": "No report available yet. Run /run-tests or /run-jira-pipeline first."}),
+            jsonify(
+                {"error": "No report available yet. Run /run-tests or /run-jira-pipeline first."}
+            ),
             404,
         )
 
