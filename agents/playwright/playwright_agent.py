@@ -52,6 +52,7 @@ async def run(
             name="PlaywrightAutomation",
             system_message=playwright_automation.build(app_url=BASE_URL),
             workbench=pw_mcp,
+            max_tool_iterations=25,
         )
 
         try:
@@ -67,9 +68,39 @@ SMOKE TEST SCENARIO
 {smoke_test_scenario}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Execute every step completely.  Report PASS or FAIL for each step.
-Take screenshots at key checkpoints.
-End with a final summary and write: TESTING COMPLETE
+Execute every step completely.
+
+For each verification step, include:
+- the related Jira issue key if one is present in the scenario
+- expected outcome
+- actual outcome
+- final status
+- evidence gathered, especially screenshot paths when screenshots were taken
+
+At the end of execution, output:
+1. a human-readable summary
+2. a machine-readable JSON array enclosed between the markers
+   STRUCTURED_EVIDENCE_START
+   and
+   STRUCTURED_EVIDENCE_END
+
+Each JSON item must use this schema:
+{{
+  "step": "<step description>",
+  "status": "PASS" | "FAIL" | "INCONCLUSIVE",
+  "issue_key": "<JIRA-123 or empty string>",
+  "expected": "<expected result>",
+  "actual": "<actual observed result>",
+  "screenshot_path": "<relative path or empty string>",
+  "evidence_type": "screenshot" | "dom_snapshot" | "trace" | "video" | "none"
+}}
+
+Rules:
+- Do not omit the JSON block.
+- Use only valid JSON.
+- Only use status values PASS, FAIL, or INCONCLUSIVE.
+- If a screenshot was not captured for a step, set screenshot_path to an empty string.
+- Write TESTING COMPLETE after the JSON block.
 """,
             )
         except TypeError as exc:

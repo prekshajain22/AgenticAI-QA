@@ -34,14 +34,23 @@ Programmatic
 """
 
 import asyncio
+import json
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from agents.jira.jira_bug_analyser import run as run_bug_analyst
 from agents.jira.jira_reporter import run as run_jira_reporter
+from agents.pipelines.verification import (
+    build_inconclusive_report,
+    extract_structured_evidence,
+    validate_evidence_records,
+)
 from agents.playwright.playwright_agent import run as run_playwright
 
 load_dotenv()
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 async def run(user_key: str = "standard_user") -> dict[str, str]:
@@ -94,14 +103,42 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
     print(test_execution)
     print("-" * 60)
 
+    # ── Verification Layer : deterministic validation ────────────────────
+    print("\n" + "=" * 60)
+    print("  VERIFICATION LAYER — validating structured evidence")
+    print("=" * 60)
+
+    try:
+        extracted_records = extract_structured_evidence(test_execution)
+        validated_records, verification_errors = validate_evidence_records(
+            extracted_records,
+            project_root=PROJECT_ROOT,
+        )
+        verification_result = {
+            "status": "VALIDATED" if not verification_errors else "INCONCLUSIVE",
+            "validated": not verification_errors,
+            "records": validated_records,
+            "errors": verification_errors,
+        }
+    except ValueError as exc:
+        verification_result = build_inconclusive_report([str(exc)])
+        validated_records = []
+
+    print("\n[Verification] Result:")
+    print("-" * 60)
+    print(json.dumps(verification_result, indent=2))
+    print("-" * 60)
+
     # ── Stage 3 : Jira Update ─────────────────────────────────────────────
     print("\n" + "=" * 60)
     print("  STAGE 3 — JiraReporter: posting results back to Jira")
     print("=" * 60)
 
-    # Pass both the bug analysis (contains issue keys) and test results
-    combined_report = f"{bug_analysis}\n\n{test_execution}"
-    jira_update = await run_jira_reporter(test_execution_report=combined_report)
+    jira_update = await run_jira_reporter(
+        bug_analysis_report=bug_analysis,
+        validated_evidence=validated_records,
+        verification_errors=verification_result.get("errors", []),
+    )
 
     print("\n[JiraReporter] Jira update complete.")
     print("-" * 60)
@@ -111,6 +148,7 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
     return {
         "bug_analysis": bug_analysis,
         "test_execution": test_execution,
+        "verification": json.dumps(verification_result, indent=2),
         "jira_update": jira_update,
     }
 

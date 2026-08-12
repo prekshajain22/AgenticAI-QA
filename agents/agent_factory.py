@@ -40,7 +40,7 @@ class AgentFactory:
         tools: list[BaseTool] | None = None,
         workbench: Any | None = None,
         reflect_on_tool_use: bool | None = None,
-        max_consecutive_auto_reply: int | None = None,
+        max_tool_iterations: int | None = None,
     ) -> AssistantAgent:
         """Create and return a configured ``AssistantAgent``.
 
@@ -69,8 +69,8 @@ class AgentFactory:
             kwargs["tools"] = tools
         if workbench is not None:
             kwargs["workbench"] = workbench
-        if max_consecutive_auto_reply is not None:
-            kwargs["max_consecutive_auto_reply"] = max_consecutive_auto_reply
+        if max_tool_iterations is not None:
+            kwargs["max_tool_iterations"] = max_tool_iterations
         return AssistantAgent(**kwargs)
 
     def __repr__(self) -> str:  # pragma: no cover

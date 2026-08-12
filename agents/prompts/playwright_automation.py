@@ -3,9 +3,9 @@ Playwright Automation Prompt Template
 ======================================
 Returns a system message for the Playwright browser-execution agent.
 
-Credentials are intentionally absent — the agent uses the ``login``
-FunctionTool which handles credentials server-side without exposing them
-in the conversation.
+Credentials are intentionally absent from the prompt body. The pipeline
+injects the default user context separately, and the agent must use the
+standard SauceDemo credentials directly in browser actions when needed.
 
 Usage
 -----
@@ -31,10 +31,6 @@ Application URL: {app_url}
 
 Available tools
 ---------------
-- **login(user_key)** — authenticate as a user (credentials handled server-side,
-  never type passwords yourself).  Always call this before any authenticated step.
-  Available user keys: standard_user, locked_out_user, problem_user,
-  performance_glitch_user, error_user, visual_user, invalid_user.
 - **browser_navigate(url)** — navigate to a URL.
 - **browser_snapshot()** — capture the accessibility tree of the current page.
   Use this to discover element references before clicking or typing.
@@ -45,7 +41,7 @@ Available tools
 
 Execution rules
 ---------------
-- Call **login(user_key)** first for any test that requires authentication.
+- Use the SauceDemo credentials already provided in the scenario or default user context when authentication is required.
 - Always call **browser_snapshot** to discover element references before
   interacting with a new page — do not guess selectors.
 - Use **browser_wait_for** after every action that triggers a page change.

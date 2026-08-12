@@ -19,6 +19,8 @@ Usage
 """
 
 import asyncio
+import json
+from typing import Any
 
 from autogen_ext.tools.mcp import McpWorkbench
 from dotenv import load_dotenv
@@ -31,14 +33,21 @@ from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 load_dotenv()
 
 
-async def run(test_execution_report: str) -> str:
-    """Post test results back to Jira as comments on the relevant issues.
+async def run(
+    bug_analysis_report: str,
+    validated_evidence: list[dict[str, Any]],
+    verification_errors: list[str] | None = None,
+) -> str:
+    """Post validated test results back to Jira as comments on relevant issues.
 
     Parameters
     ----------
-    test_execution_report:
-        The full text output from the Playwright automation agent,
-        containing PASS / FAIL results per step and Jira issue references.
+    bug_analysis_report:
+        Stage 1 output containing issue context and scenario details.
+    validated_evidence:
+        Deterministically validated Stage 2 evidence records.
+    verification_errors:
+        Validation or evidence errors collected by the verification layer.
 
     Returns
     -------
@@ -59,19 +68,28 @@ async def run(test_execution_report: str) -> str:
         try:
             result = await agent.run(
                 task=f"""
-Post test results to Jira for project {JIRA_PROJECT_NAME} ({JIRA_PROJECT_KEY}).
+Post validated test results to Jira for project {JIRA_PROJECT_NAME} ({JIRA_PROJECT_KEY}).
 
-Below is the automated test execution report from the Playwright agent.
-Find all {JIRA_PROJECT_KEY} issue keys mentioned (e.g. {JIRA_PROJECT_KEY}-1, {JIRA_PROJECT_KEY}-2),
-determine their test outcome, and add a comment to each Jira issue.
+Use the bug analysis for context, but do NOT infer outcomes from prose.
+Only use the validated evidence records provided below.
 
-TEST EXECUTION REPORT:
-{test_execution_report}
+BUG ANALYSIS REPORT:
+{bug_analysis_report}
 
-For each issue key found:
-1. Determine if the test PASSED, FAILED, or is INCONCLUSIVE.
-2. Call jira_add_comment with the issue key and the result comment.
-3. After all comments are posted, write: JIRA UPDATED
+VALIDATED EVIDENCE JSON:
+{json.dumps(validated_evidence, indent=2)}
+
+VERIFICATION ERRORS:
+{json.dumps(verification_errors or [], indent=2)}
+
+Rules:
+1. Only comment on issues explicitly present in VALIDATED EVIDENCE JSON.
+2. If validated evidence for an issue is present, use that record's status only.
+3. If verification errors exist, mention that the pipeline had validation issues.
+4. If no validated evidence records exist, do not guess outcomes from prose.
+5. If there is insufficient validated evidence for an issue, write INCONCLUSIVE.
+6. Call jira_add_comment with the issue key and the result comment.
+7. After all comments are posted, write: JIRA UPDATED
 """,
             )
         except TypeError as exc:
@@ -87,28 +105,23 @@ For each issue key found:
 
 async def main() -> None:
     # Standalone demo — posts a sample result
-    sample_report = """
-    Step 1 — Navigate to https://www.saucedemo.com
-    Status: PASS
-
-    Step 2 — Login with standard_user
-    Status: PASS
-
-    Step 3 — Verify CRED-3: Login button re-enabled after failed attempt
-    Action: Attempted login with invalid credentials
-    Expected: Login button should re-enable after failed attempt
-    Actual: Login button remained enabled throughout
-    Status: PASS — bug CRED-3 not reproduced
-
-    Step 4 — Verify CRED-4: Error message overlaps logo on mobile
-    Action: Checked error message layout on mobile viewport
-    Expected: Error message should not overlap logo
-    Actual: Error message displayed correctly
-    Status: PASS — bug CRED-4 not reproduced
-
-    TESTING COMPLETE
-    """
-    report = await run(test_execution_report=sample_report)
+    sample_bug_analysis = "CRED-3 and CRED-4 require verification. HANDOFF TO AUTOMATION"
+    sample_evidence = [
+        {
+            "step": "Verify CRED-3: Login button re-enabled after failed attempt",
+            "status": "PASS",
+            "issue_key": "CRED-3",
+            "expected": "Login button should re-enable after failed attempt",
+            "actual": "Button remained enabled throughout; bug not reproduced",
+            "screenshot_path": "output/screenshots/cred-3.png",
+            "evidence_type": "screenshot",
+        }
+    ]
+    report = await run(
+        bug_analysis_report=sample_bug_analysis,
+        validated_evidence=sample_evidence,
+        verification_errors=[],
+    )
     print("\n========== JIRA UPDATE REPORT ==========\n")
     print(report)
 
