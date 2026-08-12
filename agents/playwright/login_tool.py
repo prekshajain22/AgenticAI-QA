@@ -25,8 +25,7 @@ def login(user_key: str) -> dict:
     """
     if user_key not in _USERS:
         raise ValueError(
-            f"user_key '{user_key}' not found in users.json. "
-            f"Available: {list(_USERS.keys())}"
+            f"user_key '{user_key}' not found in users.json. Available: {list(_USERS.keys())}"
         )
     return dict(_USERS[user_key])
 

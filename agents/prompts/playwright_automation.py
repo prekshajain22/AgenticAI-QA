@@ -41,7 +41,7 @@ Available tools
 
 Execution rules
 ---------------
-- Use the SauceDemo credentials already provided in the scenario or default user context when authentication is required.
+- Use the SauceDemo credentials provided or default user when authentication is required.
 - Always call **browser_snapshot** to discover element references before
   interacting with a new page — do not guess selectors.
 - Use **browser_wait_for** after every action that triggers a page change.
