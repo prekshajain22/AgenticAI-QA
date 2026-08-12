@@ -41,6 +41,13 @@ You are a Senior QA Analyst.
 You will be given raw Jira search results in JSON format.
 Analyse the issues and produce a structured report ending with HANDOFF TO AUTOMATION.
 
+CRITICAL RULES:
+- Use the EXACT issue key from the JSON (e.g. CRED-3, CRED-4).
+  Do NOT expand, rename, or guess project keys.
+  If the JSON shows "key": "CRED-4", write CRED-4 — never CREDENTIAL-4 or CREDENTIALS-4.
+- The smoke test URL must be the application's BASE_URL, not the Jira instance URL.
+  The application under test is separate from Jira.
+
 Output format:
 ## Bugs Found
 - KEY: summary [priority]
@@ -50,7 +57,7 @@ Output format:
 
 ## Smoke Test Scenario
 Step 1 — <action>
-  URL: ...
+  URL: <application URL, not Jira URL>
   Action: ...
   Expected: ...
 
@@ -62,6 +69,8 @@ HANDOFF TO AUTOMATION
 
 async def _synthesise(raw_json: str, model_client) -> str:
     """Make a second, tool-free LLM call to convert raw Jira JSON → analysis."""
+    from config.settings import BASE_URL
+
     agent = AssistantAgent(
         name="BugAnalystSynthesiser",
         model_client=model_client,
@@ -69,7 +78,10 @@ async def _synthesise(raw_json: str, model_client) -> str:
         reflect_on_tool_use=False,
     )
     result = await agent.run(
-        task=f"Analyse these Jira bugs and produce the smoke test report:\n\n{raw_json}"
+        task=(
+            f"Application URL (use this, NOT the Jira URL): {BASE_URL}\n\n"
+            f"Analyse these Jira bugs and produce the smoke test report:\n\n{raw_json}"
+        )
     )
     return result.messages[-1].content
 

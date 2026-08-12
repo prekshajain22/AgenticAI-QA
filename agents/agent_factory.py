@@ -15,11 +15,15 @@ class AgentFactory:
     -------
         from agents import AgentFactory, MCPConfig
         from agents.prompts import jira_bug_analyst
+        from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
         factory = AgentFactory(model_client=MCPConfig.default_client())
         agent = factory.create_agent(
             name="BugAnalyst",
-            system_message=jira_bug_analyst.build(project_key="CRED", project_name="CreditBank"),
+            system_message=jira_bug_analyst.build(
+                project_key=JIRA_PROJECT_KEY,
+                project_name=JIRA_PROJECT_NAME,
+            ),
             workbench=jira_mcp,
         )
     """

@@ -287,6 +287,8 @@ _pipeline_lock = threading.Lock()
 
 def _run_pipeline_in_background(job_id: str) -> None:
     """Run the 3-stage Jira→Playwright pipeline in a background thread."""
+    global _latest_pipeline_pdf  # must be declared global before assignment
+
     import asyncio
 
     from agents.pipelines.jira_playwright import run as run_pipeline
@@ -454,20 +456,32 @@ _pipeline_pdf_lock = threading.Lock()
 
 @app.route("/download-report", methods=["GET"])
 def download_latest_report():
-    """Download the PDF from the most recent pytest run."""
-    with _latest_lock:
-        latest = _latest_pdf
+    """Download the most recently generated PDF (pytest report OR pipeline report).
 
-    if latest is None or not latest["path"].exists():
+    Serves whichever PDF was generated most recently.  This lets both the
+    QA Test Execution Orchestrator (v3) and the Jira Pipeline (v1) n8n
+    workflows use the same endpoint without re-importing the workflow JSON.
+    """
+    with _latest_lock:
+        pytest_pdf = _latest_pdf
+    with _pipeline_pdf_lock:
+        pipeline_pdf = _latest_pipeline_pdf
+
+    # Pick the most recently created PDF
+    candidates = [p for p in [pytest_pdf, pipeline_pdf] if p and p["path"].exists()]
+    if not candidates:
         return make_response(
-            jsonify({"error": "No regression report available yet. POST /run-tests first."}),
+            jsonify({"error": "No report available yet. Run /run-tests or /run-jira-pipeline first."}),
             404,
         )
+
+    # Sort by modification time of the PDF file; serve the newest
+    latest = max(candidates, key=lambda p: p["path"].stat().st_mtime)
 
     return send_file(
         latest["path"],
         as_attachment=True,
-        download_name="QA_Execution_Report.pdf",
+        download_name=latest["path"].name,
     )
 
 

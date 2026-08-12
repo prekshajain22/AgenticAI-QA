@@ -1,21 +1,17 @@
 """
 Playwright Automation Agent
 ============================
-A reusable, standalone agent that takes a smoke test scenario (plain text)
-and executes it step by step using the Playwright MCP browser tools.
+Executes a smoke test scenario step by step in a real browser via the
+Playwright MCP server.
 
-This agent is completely independent of Jira — it can execute any test
-scenario passed to it.  The typical caller is ``jira_playwright_pipeline``
-which feeds it the output of the Bug Analyst, but it can also be driven
-directly or composed into other workflows.
+This agent is app-agnostic and Jira-independent — pass any plain-text
+scenario and it will execute it.
 
 Usage
 -----
-    # Run standalone with a hard-coded scenario
-    python -m agents.playwright_agent
+    python -m agents.playwright.playwright_agent
 
-    # Or call programmatically
-    from agents.playwright_agent import run
+    from agents.playwright.playwright_agent import run
     report = await run(smoke_test_scenario="Step 1: Navigate to …")
 """
 
@@ -27,41 +23,9 @@ from dotenv import load_dotenv
 from agents.agent_factory import AgentFactory
 from agents.mcp_config import MCPConfig
 from agents.prompts import playwright_automation
-from automation.utils.data_reader import read_json
 from config.settings import BASE_URL
 
 load_dotenv()
-
-# ---------------------------------------------------------------------------
-# Credential loader
-# ---------------------------------------------------------------------------
-
-
-def _load_credentials(user_key: str = "standard_user") -> tuple[str, str]:
-    """Read username / password from test_data/users.json.
-
-    Parameters
-    ----------
-    user_key:
-        Key in users.json (e.g. ``"standard_user"``, ``"locked_out_user"``).
-
-    Returns
-    -------
-    (username, password) tuple.
-    """
-    users = read_json("test_data/users.json")
-    if user_key not in users:
-        raise KeyError(
-            f"User '{user_key}' not found in test_data/users.json. "
-            f"Available keys: {list(users.keys())}"
-        )
-    user = users[user_key]
-    return user["username"], user["password"]
-
-
-# ---------------------------------------------------------------------------
-# Agent runner
-# ---------------------------------------------------------------------------
 
 
 async def run(
@@ -73,33 +37,29 @@ async def run(
     Parameters
     ----------
     smoke_test_scenario:
-        Plain-text step-by-step test scenario to execute (typically the
-        output of the Bug Analyst agent).
+        Plain-text step-by-step test scenario (typically from JiraBugAnalyser).
     user_key:
-        Which user from ``test_data/users.json`` to authenticate as.
+        User identifier hint passed to the agent (e.g. ``"standard_user"``).
 
     Returns
     -------
-    Full execution report string produced by the agent.
+    Full execution report string from the agent.
     """
-    username, password = _load_credentials(user_key)
     factory = AgentFactory(model_client=MCPConfig.default_client())
 
     async with McpWorkbench(MCPConfig.playwright_server_params()) as pw_mcp:
         agent = factory.create_agent(
             name="PlaywrightAutomation",
-            system_message=playwright_automation.build(
-                app_url=BASE_URL,
-                username=username,
-                password=password,
-            ),
+            system_message=playwright_automation.build(app_url=BASE_URL),
             workbench=pw_mcp,
         )
 
         try:
             result = await agent.run(
                 task=f"""
-Execute the following smoke test scenario using the Playwright browser tools.
+Execute the following smoke test scenario.
+
+Default user for authentication: {user_key}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SMOKE TEST SCENARIO
@@ -107,11 +67,7 @@ SMOKE TEST SCENARIO
 {smoke_test_scenario}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Application : {BASE_URL}
-Username    : {username}
-Password    : {password}
-
-Execute every step completely.  Report ✅ PASS or ❌ FAIL for each step.
+Execute every step completely.  Report PASS or FAIL for each step.
 Take screenshots at key checkpoints.
 End with a final summary and write: TESTING COMPLETE
 """,
@@ -120,7 +76,6 @@ End with a final summary and write: TESTING COMPLETE
             raise RuntimeError(
                 "The LLM API returned an empty response (choices=None). "
                 "The model is likely overloaded or rate-limited.\n"
-                "Fix: change OPENROUTER_MODEL in .env\n"
                 f"Original error: {exc}"
             ) from exc
 
@@ -131,27 +86,21 @@ End with a final summary and write: TESTING COMPLETE
 # CLI entry point (standalone demo)
 # ---------------------------------------------------------------------------
 
-_DEMO_SCENARIO = """
-Step 1 — Navigate to the application login page.
-  Expected: Login form with username, password fields and a Login button is visible.
+_DEMO_SCENARIO = f"""
+Step 1 — Navigate to the login page at {BASE_URL}.
+  Expected: Login form is visible.
 
-Step 2 — Log in with valid credentials (standard_user / secret_sauce).
-  Expected: Redirect to the inventory/products page.
+Step 2 — Log in with username 'standard_user'.
+  Expected: Redirect to the inventory / products page.
 
-Step 3 — Verify that product items are displayed on the inventory page.
-  Expected: At least one product item with a name and price is visible.
+Step 3 — Verify product items are displayed.
+  Expected: At least one product with name and price is visible.
 
 Step 4 — Add the first product to the cart.
-  Expected: Cart badge counter increments to 1.
+  Expected: Cart badge counter shows 1.
 
 Step 5 — Navigate to the cart page.
-  Expected: The added product appears in the cart list.
-
-Step 6 — Proceed to checkout, fill in first name, last name, postal code, and continue.
-  Expected: Checkout overview page is displayed with the order total.
-
-Step 7 — Complete the purchase.
-  Expected: Order confirmation / thank you message is displayed.
+  Expected: The added product appears in the cart.
 """
 
 

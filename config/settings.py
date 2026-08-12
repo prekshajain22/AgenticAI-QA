@@ -31,5 +31,5 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:fr
 JIRA_URL = os.getenv("JIRA_URL")
 JIRA_USERNAME = os.getenv("JIRA_USERNAME")
 JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
-JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY", "CRED")
-JIRA_PROJECT_NAME = os.getenv("JIRA_PROJECT_NAME", "CreditBank")
+JIRA_PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
+JIRA_PROJECT_NAME = os.getenv("JIRA_PROJECT_NAME")

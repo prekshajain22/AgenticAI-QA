@@ -201,7 +201,7 @@ needed, so the deterministic test suite works with zero AI configuration.
 | `GEMINI_API_KEY` / `GEMINI_MODEL`               | —                           | `MCPConfig.default_client()` (fallback)    |
 | `OPENAI_API_KEY` / `OPENAI_MODEL`               | —                           | `AIFailureAgent` only                      |
 | `JIRA_URL` / `JIRA_USERNAME` / `JIRA_API_TOKEN` | —                           | JiraBugAnalyser, JiraReporter              |
-| `JIRA_PROJECT_KEY` / `JIRA_PROJECT_NAME`        | `CRED` / `CreditBank`       | Pipeline 1                                 |
+| `JIRA_PROJECT_KEY` / `JIRA_PROJECT_NAME`        | `Sauce` / `SauceDemo`       | Pipeline 1                                 |
 
 ---
 
