@@ -313,8 +313,8 @@ def _run_pipeline_in_background(job_id: str) -> None:
             }
             generate_pipeline_pdf(pipeline_data, output_path=pdf_file)
             pdf_path_str = str(pdf_file.relative_to(PROJECT_ROOT))
-            with _latest_lock:
-                _latest_pdf = {"path": pdf_file, "run_id": job_id}
+            with _pipeline_pdf_lock:
+                _latest_pipeline_pdf = {"path": pdf_file, "run_id": job_id}
             log.info("[pipeline:%s] PDF: %s", job_id, pdf_file)
         except Exception as pdf_err:
             log.warning("[pipeline:%s] PDF generation failed: %s", job_id, pdf_err)
@@ -441,19 +441,26 @@ def health():
 
 
 # ---------------------------------------------------------------------------
-# Route: GET /download-report
+# Latest pipeline PDF store (separate from pytest PDF)
+# ---------------------------------------------------------------------------
+_latest_pipeline_pdf: dict | None = None
+_pipeline_pdf_lock = threading.Lock()
+
+
+# ---------------------------------------------------------------------------
+# Route: GET /download-report  (pytest regression report)
 # ---------------------------------------------------------------------------
 
 
 @app.route("/download-report", methods=["GET"])
 def download_latest_report():
-    """Download the PDF from the most recent completed run."""
+    """Download the PDF from the most recent pytest run."""
     with _latest_lock:
         latest = _latest_pdf
 
     if latest is None or not latest["path"].exists():
         return make_response(
-            jsonify({"error": "No report available yet. Run the tests first."}),
+            jsonify({"error": "No regression report available yet. POST /run-tests first."}),
             404,
         )
 
@@ -461,6 +468,30 @@ def download_latest_report():
         latest["path"],
         as_attachment=True,
         download_name="QA_Execution_Report.pdf",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Route: GET /download-pipeline-pdf  (Jira pipeline report)
+# ---------------------------------------------------------------------------
+
+
+@app.route("/download-pipeline-pdf", methods=["GET"])
+def download_pipeline_pdf():
+    """Download the PDF from the most recent Jira pipeline run."""
+    with _pipeline_pdf_lock:
+        latest = _latest_pipeline_pdf
+
+    if latest is None or not latest["path"].exists():
+        return make_response(
+            jsonify({"error": "No pipeline PDF available yet. POST /run-jira-pipeline first."}),
+            404,
+        )
+
+    return send_file(
+        latest["path"],
+        as_attachment=True,
+        download_name="Jira_Pipeline_Report.pdf",
     )
 
 

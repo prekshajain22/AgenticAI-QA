@@ -1,211 +1,176 @@
 # AgenticAI-QA
 
-Playwright + Pytest BDD automation framework with AI-powered failure analysis, a synchronous Flask test-runner API, and n8n workflow orchestration.
+A QA automation framework combining a Playwright/pytest-BDD test suite with
+an AI agent layer (AutoGen + MCP) that reads Jira bugs, verifies them in a
+real browser, and reports back automatically.
 
-## Tech Stack
-
-Python · Playwright · Pytest-BDD · Flask · ReportLab · Ruff · n8n · AutoGen · Gemini · JIRA MCP
+For how it's built and why, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
-## Quick Start
+## Quick start
 
-```powershell
+```bash
+git clone https://github.com/prekshajain22/AgenticAI-QA.git
+cd AgenticAI-QA
+
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
 pip install -r requirements.txt
 playwright install
+
+cp .env.example .env             # then fill in the values you need — see below
 ```
 
-> **JIRA agents also require `uv` (for `uvx mcp-atlassian`):**
->
-> ```powershell
-> # Windows
-> powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-> # macOS / Linux
-> curl -LsSf https://astral.sh/uv/install.sh | sh
-> ```
->
-> See https://docs.astral.sh/uv/getting-started/installation/
-
-Create a `.env` file (all values are optional — defaults shown):
-
-```
-BASE_URL=https://www.saucedemo.com
-BROWSER=chromium          # chromium | firefox | webkit
-HEADLESS=True
-SLOW_MO=0
-DEFAULT_TIMEOUT=5000
-DEFAULT_NAVIGATION_TIMEOUT=10000
-FLASK_PORT=5001
-```
+You don't need every value in `.env` filled in — only fill in what the
+thing you're running actually uses (see the table below).
 
 ---
 
-## Running Tests
+## Running the deterministic test suite
 
-```powershell
-pytest -v                                          # all tests (integration excluded by default)
-pytest tests/unit/ -v                              # unit tests only
-pytest tests/step_definitions/ -v                 # BDD tests only
-pytest -m smoke -v                                 # smoke suite
-pytest -m regression -v                            # regression suite
-pytest -m integration -s                           # integration tests (requires real credentials)
-pytest -n auto -v                                  # parallel execution
-pytest -k "login" -v                               # by name filter
+```bash
+# Full suite
+pytest
+
+# Just smoke tests
+pytest -m smoke
+
+# Specific feature
+pytest tests/features/login.feature
+
+# Skip anything that hits a real external service (Jira, LLMs, live browser)
+pytest -m "not integration"
 ```
 
-> Integration tests (`tests/integration/`) hit real external services (JIRA, Gemini).
-> They are excluded from the default run via `pytest.ini` `-m "not integration"`.
-> Run them explicitly after setting credentials in `.env`.
+Cross-browser: set `BROWSER=chromium|firefox|webkit` in `.env`.
+Headed mode for debugging: set `HEADLESS=False`.
+
+Reports land in `output/reports/` (HTML), screenshots on failure in
+`output/screenshots/`, logs in `output/logs/`.
 
 ---
 
-## JIRA AI Agents
+## Running the AI agents
 
-The `agents/jira/` package provides AutoGen agents that connect to JIRA via the
-[mcp-atlassian](https://github.com/sooperset/mcp-atlassian) MCP server (requires `uv`).
+Each agent can be run standalone for testing, or via its pipeline.
 
-**Required `.env` variables:**
+```bash
+# Pipeline: Jira → Playwright → Jira (reads bugs, verifies them, reports back)
+python -m agents.pipelines.jira_playwright
 
-```
-GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-2.0-flash   # optional — this is the default
-JIRA_URL=https://your-org.atlassian.net
-JIRA_USERNAME=your-email@example.com
-JIRA_API_TOKEN=...
-JIRA_PROJECT_KEY=CRED
-JIRA_PROJECT_NAME=CreditBank
+# Individual agents
+python -m agents.jira.jira_bug_analyser
+python -m agents.playwright.playwright_agent
+python -m agents.jira.jira_reporter
 ```
 
-**Run the Bug Analyser:**
+Requires, at minimum, one AI provider key (`OPENROUTER_API_KEY` or
+`GEMINI_API_KEY`) and, for the Jira agents, `JIRA_URL` / `JIRA_USERNAME` /
+`JIRA_API_TOKEN`. See [ARCHITECTURE.md](ARCHITECTURE.md#configuration) for
+the full variable list and what each agent actually needs.
 
-```powershell
-python -m agents.jira.bug_analyser
-```
+The Jira agents connect via `mcp-atlassian`, launched through `uvx` — you'll
+need [`uv`](https://docs.astral.sh/uv/) installed on your machine
+(`pip install uv` or see their install docs) for these to work. The
+Playwright agent connects via `npx @playwright/mcp`, which needs Node.js
+installed.
 
-**Verify MCP connectivity first:**
+To sanity-check your Jira MCP connection before running a full agent:
 
-```powershell
+```bash
 python scripts/check_mcp_connection.py
 ```
 
 ---
 
-## Running the Full Workflow (Flask + n8n)
+## Running the full pipeline as a service (n8n)
 
-### 1. Start the Flask API
+`service/test_runner.py` exposes the pytest suite + AI failure analysis as
+an HTTP API, so it can be triggered and monitored externally — the intended
+use is via the n8n workflows in `n8n-workflows/`.
 
-```powershell
-.venv\Scripts\Activate.ps1
-python service\test_runner.py
+```bash
+python service/test_runner.py
 ```
 
-The service binds to `0.0.0.0:5001` (port configurable via `FLASK_PORT`).
+| Endpoint           | Method | Purpose                                             |
+| ------------------ | ------ | --------------------------------------------------- |
+| `/run-tests`       | `POST` | Run the suite, return results + AI analysis as JSON |
+| `/download-report` | `GET`  | Download the PDF report from the most recent run    |
+| `/health`          | `GET`  | Liveness check                                      |
 
-### 2. Start n8n
+If `FLASK_SECRET` is set in `.env`, requests must include an
+`X-Secret: <value>` header. It's unset by default for local use — set it
+before exposing this service beyond your own machine.
 
-```powershell
-podman start n8n
+n8n workflows (import the JSON files in `n8n-workflows/` into your n8n
+instance): trigger a run, wait for completion, email the PDF report, and
+(mocked) file a Jira bug on failure.
+
+---
+
+## Project layout
+
+```
+agents/        AI agent framework + Jira/Playwright agents + pipelines
+automation/    Playwright Page Object Model — pages, components, actions, fixtures
+service/       Flask API that runs the suite and serves reports
+tests/         Feature files, step definitions, unit tests, integration tests
+config/        All environment-variable configuration, in one place
+n8n-workflows/ Exported n8n orchestration workflows
 ```
 
-Open `http://localhost:5678` and import:
-`n8n-workflows/QA Test Execution Orchestrator v3.json`
+Full package-by-package breakdown: [ARCHITECTURE.md](ARCHITECTURE.md#package-map).
 
-### 3. Trigger via n8n
+---
 
-Click **Execute workflow** — n8n POSTs to `/run-tests`, waits for the synchronous response, runs the AI summary node, then sends the email with the PDF attached.
+## Environment variables
 
-### 4. Verify manually (without n8n)
+Copy `.env.example` to `.env` and fill in what you need — nothing here is
+required just to run the deterministic test suite against SauceDemo.
 
-```powershell
-# Run tests and get full JSON result
-$result = (Invoke-WebRequest -Method POST http://localhost:5001/run-tests -UseBasicParsing).Content | ConvertFrom-Json
-$result | Select-Object run_id, execution_status, summary
+| Variable                                                          | Needed for                                     |
+| ----------------------------------------------------------------- | ---------------------------------------------- |
+| `BASE_URL`, `BROWSER`, `HEADLESS`, timeouts                       | Test suite (sensible defaults already set)     |
+| `OPENROUTER_API_KEY` / `GEMINI_API_KEY` / `OPENAI_API_KEY`        | Any AI agent — pick at least one free provider |
+| `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN`, `JIRA_PROJECT_KEY` | Jira agents / pipeline                         |
+| `FLASK_SECRET`                                                    | The Flask service, if exposed beyond localhost |
 
-# Download the PDF
-Invoke-WebRequest http://localhost:5001/download-report -OutFile QA_Report.pdf -UseBasicParsing
+Generate a Flask secret with:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 ---
 
-## Flask API Reference
+## Code quality
 
-| Method | Endpoint           | Description                                                |
-| ------ | ------------------ | ---------------------------------------------------------- |
-| `POST` | `/run-tests`       | Run full pytest suite synchronously; returns complete JSON |
-| `GET`  | `/health`          | Liveness probe — returns `{"status": "ok"}`                |
-| `GET`  | `/download-report` | Download PDF from the most recent run                      |
-
-`POST /run-tests` blocks until pytest, PDF generation, and AI analysis are all complete. Set the n8n HTTP Request node timeout to at least 600 s (10 min) to match the service's expected run time.
-
----
-
-## Project Layout
-
-```
-agenticai-qa/
-├── automation/              # Browser-automation framework
-│   ├── actions/             #   Business-level workflows (LoginActions, InventoryActions)
-│   ├── components/          #   Reusable UI element wrappers (Button, Label, TextInput)
-│   ├── fixtures/            #   Pytest fixtures (browser, pages, data, screenshots)
-│   ├── locators/            #   CSS/attribute selectors
-│   ├── pages/               #   Page Objects (LoginPage, InventoryPage)
-│   └── utils/               #   Helpers (logger, waits, data_reader, assertions)
-├── ai/                      # AI failure-analysis agents
-│   ├── ai_failure_agent.py  #   Prompt builder (plugs into any LLM)
-│   └── report_analysis_agent.py  # Classifies failures, derives root cause
-├── service/                 # Flask test-runner API
-│   ├── test_runner.py       #   POST /run-tests · GET /health · GET /download-report
-│   └── pdf_report_generator.py   # ReportLab PDF builder
-├── agents/
-│   ├── jira/                # JIRA AutoGen agents
-│   │   ├── _client.py       #   Shared Gemini client + MCP server params factory
-│   │   └── bug_analyser.py  #   Bug Analyser agent (searches & reports defects)
-│   └── ...                  # Other AutoGen agents (ai_failure_agent, etc.)
-├── scripts/
-│   └── check_mcp_connection.py  # Manual connectivity check for mcp-atlassian
-├── tests/
-│   ├── features/            # Gherkin feature files (login, add_to_cart)
-│   ├── step_definitions/    # Pytest-BDD step implementations
-│   ├── unit/                # Fast unit tests (no external services)
-│   └── integration/         # Integration tests — excluded from CI by default
-├── config/
-│   └── settings.py          # Env-var driven config (BASE_URL, BROWSER, HEADLESS, …)
-├── test_data/
-│   └── users.json           # Test user credentials
-├── n8n-workflows/           # n8n workflow JSON files (v1, v2, v3)
-├── output/                  # Generated output — gitignored
-│   ├── reports/             #   Per-run HTML, JSON, PDF reports
-│   ├── logs/                #   flask.log
-│   └── screenshots/         #   Failure screenshots
-├── .github/workflows/       # CI (GitHub Actions)
-├── conftest.py
-├── pytest.ini
-├── pyproject.toml
-└── requirements.txt
+```bash
+ruff check .
+ruff format .
 ```
 
----
-
-## Code Quality
-
-```powershell
-ruff format .    # auto-format
-ruff check .     # lint (E, F, I rules)
-```
+CI (`.github/workflows/tests.yml`) runs linting and the full suite
+(`pytest -v -m "not integration"`) on every push and PR, and uploads the
+HTML report and any failure screenshots as build artifacts.
 
 ---
 
 ## Troubleshooting
 
-| Symptom                        | Fix                                                                                                               |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `ModuleNotFoundError`          | Activate the virtualenv; run from the project root                                                                |
-| Port already in use            | Set `FLASK_PORT=5002` in `.env`                                                                                   |
-| Playwright browser missing     | `playwright install`                                                                                              |
-| n8n can't reach Flask          | Flask must be running; `host.containers.internal` resolves the host from inside the podman container              |
-| Stale `__pycache__`            | `Get-ChildItem -Recurse -Filter __pycache__ \| Remove-Item -Recurse -Force`                                       |
-| `uvx: command not found`       | Install `uv`: see https://docs.astral.sh/uv/getting-started/installation/                                         |
-| `ModuleNotFoundError: mcp`     | Run `pip install -r requirements.txt` — needs `autogen-ext[mcp]` and `mcp<2.0.0`                                  |
-| JIRA `KeyError` / `ValueError` | Set `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` in `.env`; verify with `python scripts/check_mcp_connection.py` |
+**`ModuleNotFoundError` for `mcp`, `httpx`, or `autogen_ext.tools.mcp`** —
+run `pip install -r requirements.txt` again; these are pinned there
+specifically because AutoGen's MCP extras have tight version requirements.
+
+**Jira agent hangs or errors with "command not found: uvx"** — install
+[`uv`](https://docs.astral.sh/uv/); `mcp-atlassian` is launched through it.
+
+**Playwright agent can't connect** — make sure Node.js is installed;
+`@playwright/mcp` is launched via `npx`.
+
+**"AI analysis unavailable" in a report** — no AI provider key is set, or
+the configured model returned an empty response. Check `.env` and try a
+different `*_MODEL` value.

@@ -141,7 +141,7 @@
     },
     {
       "parameters": {
-        "url": "http://host.containers.internal:5001/download-report",
+        "url": "http://host.containers.internal:5001/download-pipeline-pdf",
         "options": {
           "response": {
             "response": {
