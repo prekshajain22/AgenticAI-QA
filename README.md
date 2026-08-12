@@ -91,9 +91,60 @@ python scripts/check_mcp_connection.py
 an HTTP API, so it can be triggered and monitored externally — the intended
 use is via the n8n workflows in `n8n-workflows/`.
 
-```bash
-python service/test_runner.py
+### 1. Activate the environment
+
+```powershell
+.venv\Scripts\Activate.ps1
 ```
+
+### 2. Start the Flask service
+
+```powershell
+python service\test_runner.py
+```
+
+Binds to `0.0.0.0:5001` by default (override with `FLASK_PORT` in `.env`).
+Leave this running — it's the API n8n calls. Check it's up:
+
+```powershell
+Invoke-WebRequest http://localhost:5001/health -UseBasicParsing
+```
+
+### 3. Start n8n
+
+```powershell
+podman start n8n
+```
+
+Open **http://localhost:5678** and import
+`n8n-workflows/QA Test Execution Orchestrator v3.json` if it isn't already
+there.
+
+### 4. Trigger it
+
+Click **Execute workflow** in the n8n UI — it POSTs to `/run-tests`, waits
+for the full run to finish, then emails the PDF report.
+
+- **Set the n8n HTTP Request node's timeout to at least 600s (10 min).**
+  `/run-tests` blocks until pytest, PDF generation, and AI analysis are all
+  complete — a short timeout will kill the connection before Flask responds.
+- n8n reaches Flask via `http://host.containers.internal:5001` — this
+  resolves the host machine from inside the podman container. If n8n can't
+  connect, confirm Flask is running and bound to `0.0.0.0` (the default).
+
+### 5. Verify without n8n
+
+```powershell
+$result = (Invoke-WebRequest -Method POST http://localhost:5001/run-tests -UseBasicParsing).Content | ConvertFrom-Json
+$result | Select-Object run_id, execution_status, summary
+
+Invoke-WebRequest http://localhost:5001/download-report -OutFile QA_Report.pdf -UseBasicParsing
+```
+
+Useful for confirming the Flask/pytest/AI side works before troubleshooting
+n8n specifically.
+
+### Flask API reference
 
 | Endpoint           | Method | Purpose                                             |
 | ------------------ | ------ | --------------------------------------------------- |
@@ -105,9 +156,11 @@ If `FLASK_SECRET` is set in `.env`, requests must include an
 `X-Secret: <value>` header. It's unset by default for local use — set it
 before exposing this service beyond your own machine.
 
-n8n workflows (import the JSON files in `n8n-workflows/` into your n8n
-instance): trigger a run, wait for completion, email the PDF report, and
-(mocked) file a Jira bug on failure.
+The other workflows in `n8n-workflows/` follow the same start-Flask,
+start-n8n, import-and-execute pattern — `QA Jira Pipeline v1.json` triggers
+the `agents.pipelines.jira_playwright` agent pipeline instead of the pytest
+suite; check its HTTP Request node for the exact endpoint it expects before
+running it.
 
 ---
 
