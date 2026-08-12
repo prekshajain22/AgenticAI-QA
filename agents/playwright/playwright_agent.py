@@ -16,6 +16,8 @@ Usage
 """
 
 import asyncio
+import time
+import logging
 
 from autogen_ext.tools.mcp import McpWorkbench
 from dotenv import load_dotenv
@@ -26,6 +28,9 @@ from agents.prompts import playwright_automation
 from config.settings import BASE_URL
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 async def run(
@@ -55,6 +60,8 @@ async def run(
             max_tool_iterations=25,
         )
 
+        start_time = time.time()
+        logger.info("Starting Playwright agent run with user_key: %s", user_key)
         try:
             result = await agent.run(
                 task=f"""
@@ -103,12 +110,12 @@ Rules:
 - Write TESTING COMPLETE after the JSON block.
 """,
             )
-        except TypeError as exc:
-            raise RuntimeError(
-                "The LLM API returned an empty response (choices=None). "
-                "The model is likely overloaded or rate-limited.\n"
-                f"Original error: {exc}"
-            ) from exc
+        except Exception as exc:
+            logger.error("Agent run failed: %s", exc)
+            raise
+
+        duration = time.time() - start_time
+        logger.info("Playwright agent run completed in %.2f seconds.", duration)
 
     return result.messages[-1].content
 
