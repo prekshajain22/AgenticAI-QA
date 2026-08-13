@@ -146,11 +146,20 @@ n8n specifically.
 
 ### Flask API reference
 
-| Endpoint           | Method | Purpose                                             |
-| ------------------ | ------ | --------------------------------------------------- |
-| `/run-tests`       | `POST` | Run the suite, return results + AI analysis as JSON |
-| `/download-report` | `GET`  | Download the PDF report from the most recent run    |
-| `/health`          | `GET`  | Liveness check                                      |
+| Endpoint                 | Method | Purpose                                                                               |
+| ------------------------ | ------ | ------------------------------------------------------------------------------------- |
+| `/run-tests`             | `POST` | Run the pytest suite, return results + AI analysis as JSON                            |
+| `/download-report`       | `GET`  | Download the PDF report from the most recent `/run-tests` run                         |
+| `/run-jira-pipeline`     | `POST` | Start the Jira→Playwright→Jira pipeline in the background — returns `202` immediately |
+| `/pipeline-status`       | `GET`  | Poll for the Jira pipeline's result                                                   |
+| `/download-pipeline-pdf` | `GET`  | Download the PDF from the most recent Jira pipeline run                               |
+| `/health`                | `GET`  | Liveness check                                                                        |
+
+`/run-jira-pipeline` doesn't block — it kicks off the agent pipeline in the
+background and returns immediately, since a 3-agent run with live browser
+and Jira calls can take a while. Poll `/pipeline-status` until it reports
+done, then hit `/download-pipeline-pdf`. This is what `QA Jira Pipeline
+v1.json` does for you if you're driving it from n8n instead.
 
 If `FLASK_SECRET` is set in `.env`, requests must include an
 `X-Secret: <value>` header. It's unset by default for local use — set it

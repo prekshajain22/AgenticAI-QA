@@ -37,7 +37,9 @@ agenticai-qa/
 │   ├── playwright/
 │   │   └── playwright_agent.py    Stage 2 — executes a smoke test plan in a real browser via MCP
 │   ├── pipelines/
-│   │   └── jira_playwright.py     Orchestrates stages 1 → 2 → 3
+│   │   ├── jira_playwright.py     Orchestrates stages 1 → 2 → 3, gated by the verification layer
+│   │   ├── evidence_schema.py     Canonical schema for Stage 2 → 3 structured evidence records
+│   │   └── verification.py        Deterministic validation of evidence before Stage 3 runs
 │   ├── analysis/
 │   │   ├── ai_failure_agent.py        Classifies a pytest failure, suggests a fix (sync wrapper)
 │   │   └── report_analysis_agent.py   Reads a pytest JSON report, calls AIFailureAgent per failure
@@ -133,21 +135,46 @@ JiraReporter (Jira MCP)
   → ends with: JIRA UPDATED
 ```
 
-Agents hand off to each other by passing plain text, with each stage's
-output ending in a sentinel string (`HANDOFF TO AUTOMATION`,
-`TESTING COMPLETE`, `JIRA UPDATED`). This is a deliberately lightweight
-coordination mechanism — good enough for a linear 3-stage pipeline; it
-would need to become a real schema if the pipeline grew branches.
+Stage transitions 1→2 and 2→3 use a sentinel string at the end of each
+agent's output (`HANDOFF TO AUTOMATION`, `TESTING COMPLETE`,
+`JIRA UPDATED`) as a lightweight readiness signal — good enough for a
+linear pipeline; it isn't the thing standing between the agents and Jira.
 
 **Run it:** `python -m agents.pipelines.jira_playwright`
 
-**Known limitation, being worked on:** each stage currently _self-reports_
-success in free text — there's no deterministic check between stages before
-`JiraReporter` writes a real comment to Jira. A hallucinated "PASS" from the
-Playwright agent currently has nothing stopping it from becoming a Jira
-comment. The planned fix is to make the stage 2 → stage 3 handoff structured
-data (`[{step, status, screenshot_path}]`) instead of prose, so stage 3
-verifies against evidence rather than re-interpreting a paragraph.
+### Verification layer (Stage 2 → Stage 3)
+
+This is the part that stops a hallucinated result from becoming a real
+Jira comment. `PlaywrightAgent` doesn't just narrate PASS/FAIL in prose —
+its prompt requires a machine-readable JSON array (schema defined once, in
+`agents/pipelines/evidence_schema.py`) between two literal markers,
+`STRUCTURED_EVIDENCE_START` / `STRUCTURED_EVIDENCE_END`, one record per
+step: `{step, status, issue_key, expected, actual, screenshot_path,
+evidence_type}`.
+
+Before `JiraReporter` ever runs, `agents/pipelines/verification.py` does
+this, entirely in plain Python — no LLM involved:
+
+- extracts and parses the JSON block (missing/malformed → immediate
+  `INCONCLUSIVE`, pipeline doesn't proceed on trust)
+- rejects any record missing a required field or using a status outside
+  `PASS` / `FAIL` / `INCONCLUSIVE`
+- **checks the claimed screenshot file actually exists on disk** — a
+  step can't claim evidence that isn't there
+- rejects self-contradictory records (e.g. `status: PASS` while `actual`
+  says the check failed)
+
+Only records that pass all of this — `validated_records` — are handed to
+`JiraReporter`, along with the list of `verification_errors`. The
+reporter's prompt is explicit: use only the validated JSON, never infer an
+outcome from Stage 1/2 prose, and write `INCONCLUSIVE` rather than guess
+when a given issue has no validated record. That instruction is
+prompt-enforced, not code-enforced — the _evidence_ an issue's comment can
+be based on is guaranteed correct by `verification.py`; the exact wording
+JiraReporter writes from that evidence is still model output. That's the
+honest boundary of what's currently deterministic in this pipeline versus
+what's still LLM-judgment, and it's a meaningfully smaller trust surface
+than before.
 
 ---
 
@@ -191,17 +218,36 @@ comments). A few values fail fast with a clear error at import time
 run; most AI/Jira keys are validated lazily, at the point they're first
 needed, so the deterministic test suite works with zero AI configuration.
 
-| Variable                                        | Default                     | Used by                                    |
-| ----------------------------------------------- | --------------------------- | ------------------------------------------ |
-| `BASE_URL`                                      | `https://www.saucedemo.com` | `automation/`, PlaywrightAgent             |
-| `BROWSER`                                       | `chromium`                  | `browser_fixtures`                         |
-| `HEADLESS`                                      | `True`                      | `browser_fixtures`                         |
-| `FLASK_SECRET`                                  | _(empty — auth disabled)_   | `service/test_runner.py`                   |
-| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`       | —                           | `MCPConfig.default_client()` (tried first) |
-| `GEMINI_API_KEY` / `GEMINI_MODEL`               | —                           | `MCPConfig.default_client()` (fallback)    |
-| `OPENAI_API_KEY` / `OPENAI_MODEL`               | —                           | `AIFailureAgent` only                      |
-| `JIRA_URL` / `JIRA_USERNAME` / `JIRA_API_TOKEN` | —                           | JiraBugAnalyser, JiraReporter              |
-| `JIRA_PROJECT_KEY` / `JIRA_PROJECT_NAME`        | `Sauce` / `SauceDemo`       | Pipeline 1                                 |
+| Variable                                        | Default                     | Used by                                                |
+| ----------------------------------------------- | --------------------------- | ------------------------------------------------------ |
+| `BASE_URL`                                      | `https://www.saucedemo.com` | `automation/`, PlaywrightAgent                         |
+| `BROWSER`                                       | `chromium`                  | `browser_fixtures`                                     |
+| `HEADLESS`                                      | `True`                      | `browser_fixtures`                                     |
+| `FLASK_SECRET`                                  | _(empty — auth disabled)_   | `service/test_runner.py`                               |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`       | —                           | `MCPConfig.default_client()` (tried first)             |
+| `GEMINI_API_KEY` / `GEMINI_MODEL`               | —                           | `MCPConfig.default_client()` (fallback)                |
+| `OPENAI_API_KEY` / `OPENAI_MODEL`               | —                           | `AIFailureAgent` only                                  |
+| `JIRA_URL` / `JIRA_USERNAME` / `JIRA_API_TOKEN` | —                           | JiraBugAnalyser, JiraReporter                          |
+| `JIRA_PROJECT_KEY` / `JIRA_PROJECT_NAME`        | _(required, no default)_    | Pipeline 1 — `.env.example` uses `SAUCE` / `SauceDemo` |
+
+`service/test_runner.py` exposes both pipelines over HTTP; endpoint paths
+are themselves configurable (`TEST_RUNNER_*_ENDPOINT` in `.env.example`,
+shown here at their defaults):
+
+| Endpoint                 | Method | Purpose                                                       |
+| ------------------------ | ------ | ------------------------------------------------------------- |
+| `/run-tests`             | `POST` | Run the pytest suite, return results + AI failure analysis    |
+| `/download-report`       | `GET`  | Download the PDF from the most recent `/run-tests` run        |
+| `/run-jira-pipeline`     | `POST` | Start Pipeline 1 in the background, returns `202` immediately |
+| `/pipeline-status`       | `GET`  | Poll for the Jira pipeline's result                           |
+| `/download-pipeline-pdf` | `GET`  | Download the PDF from the most recent Jira pipeline run       |
+| `/health`                | `GET`  | Liveness check                                                |
+
+`/run-jira-pipeline` is async (submit → poll) rather than blocking, unlike
+`/run-tests` — sensible, since a 3-agent pipeline with live browser and
+Jira calls can run considerably longer than a pytest suite, and holding an
+HTTP connection open for that isn't a great pattern (n8n's HTTP node has
+a timeout either way).
 
 ---
 
@@ -227,11 +273,16 @@ agent layer pretend to be more reliable than it is. Keeping them separate,
 with the agent layer explicitly labeled as such, is more honest about what
 each part actually guarantees.
 
-**Why text-sentinel handoffs instead of a proper schema between pipeline
-stages?** Simplicity, for now, at 3 linear stages. This is the known
-trade-off documented above under Pipeline 1 — the plan is to replace it with
-structured output as the next concrete improvement, not to leave it as-is
-indefinitely.
+**Why text-sentinel handoffs for stage readiness, but a real schema for
+evidence?** Different jobs. The sentinel strings only signal "this stage
+is done, the next one can start" — plain text is fine for that. But the
+data the next stage _acts on_ (whether a bug reproduced, what proves it)
+needed to be structured and validated, which is why that boundary
+specifically (Stage 2 → 3) got a real schema (`evidence_schema.py`) and a
+deterministic validator (`verification.py`) instead of more prose. Apply
+the same test to any future stage: is this just "go ahead," or is it a
+claim something downstream will act on? The former can stay a sentinel;
+the latter should be a schema.
 
 ---
 
