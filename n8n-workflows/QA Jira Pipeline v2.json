@@ -1,0 +1,360 @@
+{
+  "name": "QA Jira Pipeline v2 — Polling (30s intervals)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-2064, -1408],
+      "id": "aa000001-0000-0000-0000-000000000001",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.containers.internal:5001/run-jira-pipeline",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-1888, -1408],
+      "id": "aa000002-0000-0000-0000-000000000002",
+      "name": "Start Jira Pipeline"
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-1712, -1408],
+      "id": "aa000003-0000-0000-0000-000000000003",
+      "name": "Initial Wait — 30 s"
+    },
+    {
+      "parameters": {
+        "url": "http://host.containers.internal:5001/pipeline-status",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-1536, -1408],
+      "id": "aa000004-0000-0000-0000-000000000004",
+      "name": "Poll Pipeline Status"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Timeout guard — stop polling after MAX_MINUTES to prevent infinite loops.\nconst MAX_MINUTES = 15;\n\nconst status = $json.status || 'unknown';\nconst startedAt = $json.started_at ? new Date($json.started_at) : new Date();\nconst elapsedMs = Date.now() - startedAt.getTime();\nconst elapsedMinutes = elapsedMs / 60000;\nconst timedOut = elapsedMinutes >= MAX_MINUTES;\n\nreturn {\n  json: {\n    ...$json,\n    elapsed_minutes: parseFloat(elapsedMinutes.toFixed(1)),\n    timed_out: timedOut,\n    is_error_or_timeout: status === 'error' || timedOut\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1344, -1408],
+      "id": "aa000005-0000-0000-0000-000000000005",
+      "name": "Check Status & Timeout"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cc000001-0000-0000-0000-000000000001",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "complete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-1152, -1408],
+      "id": "aa000006-0000-0000-0000-000000000006",
+      "name": "Pipeline Complete?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cc000002-0000-0000-0000-000000000002",
+              "leftValue": "={{ $json.is_error_or_timeout }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [-1152, -1296],
+      "id": "aa000007-0000-0000-0000-000000000007",
+      "name": "Pipeline Error or Timeout?"
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 30
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-1152, -1520],
+      "id": "aa000008-0000-0000-0000-000000000008",
+      "name": "Still Running — Wait 30 s"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const d = $json;\nreturn {\n  json: {\n    status: d.status,\n    job_id: d.job_id,\n    started_at: d.started_at,\n    finished_at: d.finished_at,\n    elapsed_minutes: d.elapsed_minutes,\n    bug_analysis: d.bug_analysis || 'No bug analysis available.',\n    test_execution: d.test_execution || 'No test execution report available.',\n    jira_update: d.jira_update || 'No Jira comments posted.'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-944, -1408],
+      "id": "aa000009-0000-0000-0000-000000000009",
+      "name": "Format Pipeline Results"
+    },
+    {
+      "parameters": {
+        "url": "http://host.containers.internal:5001/download-pipeline-pdf",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [-736, -1408],
+      "id": "aa000010-0000-0000-0000-000000000010",
+      "name": "Download Pipeline PDF"
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "=Jira Pipeline: {{ $('Format Pipeline Results').item.json.status.toUpperCase() }} | {{ new Date($('Format Pipeline Results').item.json.finished_at).toLocaleDateString() }} ({{ $('Format Pipeline Results').item.json.elapsed_minutes }} min)",
+        "html": "=<h2>Jira Bug Verification Pipeline Report</h2>\n<p><b>Status:</b> {{ $('Format Pipeline Results').item.json.status.toUpperCase() }}</p>\n<p><b>Job ID:</b> {{ $('Format Pipeline Results').item.json.job_id }}</p>\n<p><b>Started:</b> {{ $('Format Pipeline Results').item.json.started_at }}</p>\n<p><b>Finished:</b> {{ $('Format Pipeline Results').item.json.finished_at }}</p>\n<p><b>Elapsed:</b> {{ $('Format Pipeline Results').item.json.elapsed_minutes }} minutes</p>\n<hr>\n<h3>Stage 1 — Jira Bug Analysis</h3>\n<pre>{{ $('Format Pipeline Results').item.json.bug_analysis }}</pre>\n<hr>\n<h3>Stage 2 — Playwright Browser Execution</h3>\n<pre>{{ $('Format Pipeline Results').item.json.test_execution }}</pre>\n<hr>\n<h3>Stage 3 — Jira Comments Posted</h3>\n<pre>{{ $('Format Pipeline Results').item.json.jira_update }}</pre>\n<p>Full report attached as PDF.</p>",
+        "options": {
+          "fileAttachments": "data"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [-528, -1408],
+      "id": "aa000011-0000-0000-0000-000000000011",
+      "name": "Send Pipeline Report",
+      "credentials": {
+        "smtp": {
+          "id": "KZ1HplfZyon3Zx8z",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "=Jira Pipeline {{ $json.timed_out ? 'TIMED OUT' : 'ERROR' }} | {{ new Date().toLocaleDateString() }}",
+        "html": "=<h2>Jira Pipeline {{ $json.timed_out ? 'Timed Out' : 'Failed' }}</h2>\n<p><b>Job ID:</b> {{ $json.job_id }}</p>\n<p><b>Status:</b> {{ $json.status }}</p>\n<p><b>Started:</b> {{ $json.started_at }}</p>\n<p><b>Elapsed:</b> {{ $json.elapsed_minutes }} minutes</p>\n{{ $json.timed_out ? '<p><b>Reason:</b> Pipeline exceeded the 15-minute polling timeout. The background job may still be running — check the Flask service logs.</p>' : '<p><b>Error:</b></p><pre>' + ($json.error || 'Unknown error') + '</pre>' }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [-944, -1296],
+      "id": "aa000012-0000-0000-0000-000000000012",
+      "name": "Send Error or Timeout Alert",
+      "credentials": {
+        "smtp": {
+          "id": "KZ1HplfZyon3Zx8z",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Start Jira Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Jira Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Initial Wait — 30 s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initial Wait — 30 s": {
+      "main": [
+        [
+          {
+            "node": "Poll Pipeline Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Pipeline Status": {
+      "main": [
+        [
+          {
+            "node": "Check Status & Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status & Timeout": {
+      "main": [
+        [
+          {
+            "node": "Pipeline Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pipeline Complete?": {
+      "main": [
+        [
+          {
+            "node": "Format Pipeline Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pipeline Error or Timeout?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pipeline Error or Timeout?": {
+      "main": [
+        [
+          {
+            "node": "Send Error or Timeout Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Still Running — Wait 30 s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Running — Wait 30 s": {
+      "main": [
+        [
+          {
+            "node": "Poll Pipeline Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pipeline Results": {
+      "main": [
+        [
+          {
+            "node": "Download Pipeline PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Pipeline PDF": {
+      "main": [
+        [
+          {
+            "node": "Send Pipeline Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Pipeline Report": {
+      "main": [[]]
+    },
+    "Send Error or Timeout Alert": {
+      "main": [[]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "bb000001-0000-0000-0000-000000000001",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "65c60f498d6c05d3a55431f4673ba336ec498029a0fe62ed719027933f104a26"
+  },
+  "nodeGroups": [],
+  "id": "QAJiraPipelineV2",
+  "tags": []
+}

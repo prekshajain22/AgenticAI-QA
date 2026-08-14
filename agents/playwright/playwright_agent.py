@@ -16,6 +16,7 @@ Usage
 """
 
 import asyncio
+import json
 import logging
 import time
 
@@ -31,6 +32,40 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _build_inconclusive_execution_report(error_message: str) -> str:
+    """Build a fallback execution report when the browser agent crashes.
+
+    The downstream pipeline expects:
+    - human-readable summary text
+    - a JSON array between STRUCTURED_EVIDENCE markers
+    - trailing TESTING COMPLETE sentinel
+
+    Returning this format allows the verification/Jira reporting stages to
+    continue gracefully instead of crashing the whole pipeline.
+    """
+    record = {
+        "step": "Playwright agent execution",
+        "status": "INCONCLUSIVE",
+        "issue_key": "",
+        "expected": "Playwright smoke test scenario executes and returns structured evidence.",
+        "actual": f"Playwright agent failed before completing execution: {error_message}",
+        "screenshot_path": "",
+        "evidence_type": "none",
+    }
+
+    return f"""## Playwright Execution Summary
+The browser automation stage ended inconclusively because 
+the Playwright agent failed before completing the scenario.
+
+Error:
+{error_message}
+
+STRUCTURED_EVIDENCE_START
+{json.dumps([record], indent=2)}
+STRUCTURED_EVIDENCE_END
+TESTING COMPLETE"""
 
 
 async def run(
@@ -110,14 +145,17 @@ Rules:
 - Write TESTING COMPLETE after the JSON block.
 """,
             )
+            content = result.messages[-1].content
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("Playwright agent returned an empty final message.")
         except Exception as exc:
-            logger.error("Agent run failed: %s", exc)
-            raise
+            logger.exception("Agent run failed")
+            return _build_inconclusive_execution_report(str(exc))
 
         duration = time.time() - start_time
         logger.info("Playwright agent run completed in %.2f seconds.", duration)
 
-    return result.messages[-1].content
+    return content
 
 
 # ---------------------------------------------------------------------------
