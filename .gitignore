@@ -62,3 +62,4 @@ desktop.ini
 .graphify/
 .mypy_cache/
 .pytype/
+.graphifyignore
