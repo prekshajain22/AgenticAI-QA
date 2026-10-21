@@ -1,6 +1,6 @@
 from automation.utils.logger import get_logger
 from automation.utils.waits import Waits
-from config.settings import DEFAULT_TIMEOUT
+from config.settings import DEFAULT_TIMEOUT, TEST_RUNNER_OUTPUT_DIR, TEST_RUNNER_SCREENSHOTS_DIR
 
 
 class BasePage:
@@ -25,4 +25,6 @@ class BasePage:
         self.page.locator(locator).wait_for(state="visible", timeout=timeout)
 
     def screenshot(self, name):
-        self.page.screenshot(path=f"screenshots/{name}.png")
+        screenshot_path = f"{TEST_RUNNER_OUTPUT_DIR}/{TEST_RUNNER_SCREENSHOTS_DIR}/{name}.png"
+        self.logger.info(f"Capturing screenshot: {screenshot_path}")
+        self.page.screenshot(path=screenshot_path)
