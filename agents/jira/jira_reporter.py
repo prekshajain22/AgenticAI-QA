@@ -26,8 +26,8 @@ from autogen_ext.tools.mcp import McpWorkbench
 from dotenv import load_dotenv
 
 from agents.agent_factory import AgentFactory
+from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
-from agents.prompts import jira_reporter as jira_reporter_prompt
 from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
 load_dotenv()
@@ -60,7 +60,9 @@ async def run(
     async with McpWorkbench(MCPConfig.jira_server_params()) as jira_mcp:
         agent = factory.create_agent(
             name="JiraReporter",
-            system_message=jira_reporter_prompt.build(project_key=JIRA_PROJECT_KEY),
+            system_message=AgentSpecLoader()
+            .load_by_id("jira_reporter")
+            .render(project_key=JIRA_PROJECT_KEY),
             workbench=jira_mcp,
             reflect_on_tool_use=False,  # disabled — avoids empty-response errors with some models
         )
