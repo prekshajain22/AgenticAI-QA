@@ -109,7 +109,9 @@ class MCPConfig:
                 "JIRA_USERNAME": JIRA_USERNAME,
                 "JIRA_API_TOKEN": JIRA_API_TOKEN,
             },
-            read_timeout_seconds=30,
+            # Listing tools / initialization can be slow depending on network + uvx env
+            # warmup; use a higher timeout than the default.
+            read_timeout_seconds=120,
         )
 
     @staticmethod

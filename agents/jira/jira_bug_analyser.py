@@ -30,8 +30,8 @@ from autogen_ext.tools.mcp import McpWorkbench
 from dotenv import load_dotenv
 
 from agents.agent_factory import AgentFactory
+from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
-from agents.prompts import jira_bug_analyst
 from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
 load_dotenv()
@@ -99,9 +99,10 @@ async def run() -> str:
     async with McpWorkbench(MCPConfig.jira_server_params()) as jira_mcp:
         agent = factory.create_agent(
             name="BugAnalyst",
-            system_message=jira_bug_analyst.build(
-                project_key=JIRA_PROJECT_KEY,
-                project_name=JIRA_PROJECT_NAME,
+            system_message=(
+                AgentSpecLoader()
+                .load_by_id("jira_bug_analyst")
+                .render(project_key=JIRA_PROJECT_KEY, project_name=JIRA_PROJECT_NAME)
             ),
             workbench=jira_mcp,
             reflect_on_tool_use=False,  # disabled — avoids thought_signature with Gemini 2.5+

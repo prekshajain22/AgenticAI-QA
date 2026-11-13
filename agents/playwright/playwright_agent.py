@@ -24,8 +24,8 @@ from autogen_ext.tools.mcp import McpWorkbench
 from dotenv import load_dotenv
 
 from agents.agent_factory import AgentFactory
+from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
-from agents.prompts import playwright_automation
 from config.settings import BASE_URL
 
 load_dotenv()
@@ -90,7 +90,9 @@ async def run(
     async with McpWorkbench(MCPConfig.playwright_server_params()) as pw_mcp:
         agent = factory.create_agent(
             name="PlaywrightAutomation",
-            system_message=playwright_automation.build(app_url=BASE_URL),
+            system_message=AgentSpecLoader()
+            .load_by_id("playwright_automation")
+            .render(app_url=BASE_URL),
             workbench=pw_mcp,
             max_tool_iterations=25,
         )

@@ -14,16 +14,18 @@ class AgentFactory:
     Example
     -------
         from agents import AgentFactory, MCPConfig
-        from agents.prompts import jira_bug_analyst
+        from agents.agent_specs import AgentSpecLoader
         from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
         factory = AgentFactory(model_client=MCPConfig.default_client())
+        system_message = (
+            AgentSpecLoader()
+            .load_by_id("jira_bug_analyst")
+            .render(project_key=JIRA_PROJECT_KEY, project_name=JIRA_PROJECT_NAME)
+        )
         agent = factory.create_agent(
             name="BugAnalyst",
-            system_message=jira_bug_analyst.build(
-                project_key=JIRA_PROJECT_KEY,
-                project_name=JIRA_PROJECT_NAME,
-            ),
+            system_message=system_message,
             workbench=jira_mcp,
         )
     """
@@ -49,7 +51,7 @@ class AgentFactory:
         name: str
             Unique agent identifier.
         system_message: str
-            Full system prompt (use ``agents.prompts.*`` helpers to build).
+            Full system prompt (typically rendered from ``agents/specs/*.md``).
         tools: list, optional
             ``FunctionTool`` / ``BaseTool`` objects.
         workbench: McpWorkbench, optional

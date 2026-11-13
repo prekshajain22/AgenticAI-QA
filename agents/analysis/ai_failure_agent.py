@@ -18,8 +18,8 @@ import concurrent.futures
 import logging
 
 from agents.agent_factory import AgentFactory
+from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
-from agents.prompts import failure_analysis
 
 log = logging.getLogger(__name__)
 
@@ -34,11 +34,20 @@ async def _analyse_async(failure: dict) -> str:
     factory = AgentFactory(model_client=model_client)
     agent = factory.create_agent(
         name="QA_Failure_Analyst",
-        system_message=failure_analysis.build(),
+        system_message=AgentSpecLoader().load_by_id("failure_analysis").render(),
     )
 
     try:
-        result = await agent.run(task=failure_analysis.task(failure))
+        logs = "\n".join(failure.get("logs", [])) or "No logs captured."
+        task = (
+            "Analyse this failed test:\n\n"
+            f"Test: {failure['test']}\n\n"
+            "Error:\n"
+            f"{failure['error']}\n\n"
+            "Logs:\n"
+            f"{logs}"
+        )
+        result = await agent.run(task=task)
         if result.messages:
             last = result.messages[-1]
             return last.content if isinstance(last.content, str) else str(last.content)
