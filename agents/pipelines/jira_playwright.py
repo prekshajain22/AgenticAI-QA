@@ -44,6 +44,7 @@ from agents.jira.jira_reporter import run as run_jira_reporter
 from agents.pipelines.verification import (
     build_inconclusive_report,
     extract_structured_evidence,
+    summarize_verification,
     validate_evidence_records,
 )
 from agents.playwright.playwright_agent import run as run_playwright
@@ -124,9 +125,19 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
         verification_result = build_inconclusive_report([str(exc)])
         validated_records = []
 
+    verification_summary = summarize_verification(
+        validated_records=validated_records,
+        verification_errors=verification_result.get("errors", []),
+    )
+
     print("\n[Verification] Result:")
     print("-" * 60)
     print(json.dumps(verification_result, indent=2))
+    print("-" * 60)
+
+    print("\n[Verification] Summary:")
+    print("-" * 60)
+    print(json.dumps(verification_summary, indent=2))
     print("-" * 60)
 
     # ── Stage 3 : Jira Update ─────────────────────────────────────────────

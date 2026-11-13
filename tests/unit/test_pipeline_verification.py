@@ -5,6 +5,7 @@ import pytest
 from agents.pipelines.verification import (
     build_inconclusive_report,
     extract_structured_evidence,
+    summarize_verification,
     validate_evidence_records,
 )
 
@@ -61,7 +62,7 @@ def test_validate_evidence_records_accepts_existing_screenshot(tmp_path: Path):
     assert errors == []
 
 
-def test_validate_evidence_records_rejects_missing_issue_key(tmp_path: Path):
+def test_validate_evidence_records_allows_missing_issue_key(tmp_path: Path):
     records = [
         {
             "step": "Verify anonymous issue",
@@ -75,8 +76,8 @@ def test_validate_evidence_records_rejects_missing_issue_key(tmp_path: Path):
     ]
 
     validated, errors = validate_evidence_records(records, project_root=tmp_path)
-    assert validated == []
-    assert any("issue_key is required" in error for error in errors)
+    assert len(validated) == 1
+    assert errors == []
 
 
 def test_validate_evidence_records_rejects_missing_screenshot_file(tmp_path: Path):
@@ -95,6 +96,25 @@ def test_validate_evidence_records_rejects_missing_screenshot_file(tmp_path: Pat
     validated, errors = validate_evidence_records(records, project_root=tmp_path)
     assert validated == []
     assert any("screenshot file does not exist" in error for error in errors)
+
+
+def test_summarize_verification_rolls_up_statuses():
+    validated_records = [
+        {"status": "PASS", "issue_key": "CRED-1"},
+        {"status": "FAIL", "issue_key": "CRED-1"},
+        {"status": "INCONCLUSIVE", "issue_key": "CRED-2"},
+        {"status": "PASS", "issue_key": ""},
+    ]
+    summary = summarize_verification(validated_records, verification_errors=[])
+
+    assert summary["validated"] is True
+    assert summary["record_count"] == 4
+    assert summary["by_status"]["PASS"] == 2
+    assert summary["by_status"]["FAIL"] == 1
+    assert summary["by_issue"]["CRED-1"]["PASS"] == 1
+    assert summary["by_issue"]["CRED-1"]["FAIL"] == 1
+    assert summary["by_issue"]["CRED-2"]["INCONCLUSIVE"] == 1
+    assert summary["by_issue"]["__NO_ISSUE_KEY__"]["PASS"] == 1
 
 
 def test_build_inconclusive_report_marks_validation_failure():
