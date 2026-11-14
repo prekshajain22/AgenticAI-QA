@@ -25,7 +25,18 @@ class LoginPage(BasePage):
         self.login_button.click()
 
     def verify_inventory_page(self):
-        return self.inventory.is_visible()
+        """Return True if inventory page is displayed after login.
+
+        In CI/headless the navigation + rendering after clicking "Login" can be
+        slower and "networkidle" is not always reliable. Prefer waiting for a
+        stable UI element that definitively indicates the inventory page.
+        """
+        try:
+            # SauceDemo inventory page container
+            self.page.wait_for_selector(LoginLocators.INVENTORY_CONTAINER, timeout=15000)
+            return self.inventory.is_visible()
+        except Exception:
+            return False
 
     def verify_login_error(self):
         return self.error_banner.is_visible()
