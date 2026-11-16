@@ -4,18 +4,18 @@ Jira Bug Analysis -> Playwright Verification -> Jira Update Pipeline
 A three-stage pipeline that answers: "Do the bugs in Jira still reproduce?"
 and writes the results back to Jira.
 
-Stage 1 — JiraBugAnalyser  (agents/jira/jira_bug_analyser.py)
+Stage 1 — Jira bug analyst agent  (agents/jira/jira_bug_analyst_agent.py)
     Connects to Jira via MCP, fetches the latest open bugs, identifies
     patterns, and produces a step-by-step smoke test scenario.
     Signals completion with "HANDOFF TO AUTOMATION".
 
-Stage 2 — PlaywrightAgent  (agents/playwright/playwright_agent.py)
+Stage 2 — Playwright agent  (agents/playwright/playwright_agent.py)
     Receives the smoke test plan and executes every step in a real
     browser via the Playwright MCP server.
     Reports PASS / FAIL per step and signals completion with
     "TESTING COMPLETE".
 
-Stage 3 — JiraReporter  (agents/jira/jira_reporter.py)
+Stage 3 — Jira comment publisher  (agents/jira/jira_comment_publisher.py, deterministic, no LLM)
     Reads the test execution report, identifies Jira issue keys,
     and posts results as comments on the relevant Jira issues.
     Signals completion with "JIRA UPDATED".
@@ -35,12 +35,11 @@ Programmatic
 
 import asyncio
 import json
+import re
 from pathlib import Path
 
-from dotenv import load_dotenv
-
-from agents.jira.jira_bug_analyser import run as run_bug_analyst
-from agents.jira.jira_reporter import run as run_jira_reporter
+from agents.jira.jira_bug_analyst_agent import run as run_bug_analyst
+from agents.jira.jira_comment_publisher import run as run_comment_publisher
 from agents.pipelines.verification import (
     build_inconclusive_report,
     extract_structured_evidence,
@@ -49,13 +48,16 @@ from agents.pipelines.verification import (
 )
 from agents.playwright.playwright_agent import run as run_playwright
 
-load_dotenv()
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
+def _extract_stage1_issue_keys(bug_analysis: str) -> set[str]:
+    """Extract Jira-like issue keys (e.g. CRED-123) from Stage 1 output."""
+    return set(re.findall(r"\b[A-Z][A-Z0-9]+-\d+\b", bug_analysis or ""))
+
+
 async def run(user_key: str = "standard_user") -> dict[str, str]:
-    """Run the full JiraBugAnalyser -> PlaywrightAgent -> JiraReporter pipeline.
+    """Run the full Jira bug analyst -> Playwright agent -> Jira comment publisher pipeline.
 
     Parameters
     ----------
@@ -73,25 +75,25 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
 
     # ── Stage 1 : Bug Analysis ────────────────────────────────────────────
     print("=" * 60)
-    print("  STAGE 1 — JiraBugAnalyser: fetching & analysing bugs")
+    print("  STAGE 1 — Jira bug analyst agent: fetching & analysing bugs")
     print("=" * 60)
 
     bug_analysis = await run_bug_analyst()
 
-    print("\n[JiraBugAnalyser] Analysis complete.")
+    print("\n[Jira bug analyst] Analysis complete.")
     print("-" * 60)
     print(bug_analysis)
     print("-" * 60)
 
     if "HANDOFF TO AUTOMATION" not in bug_analysis:
         print(
-            "\nWARNING: JiraBugAnalyser did not emit 'HANDOFF TO AUTOMATION'. "
+            "\nWARNING: Jira bug analyst did not emit 'HANDOFF TO AUTOMATION'. "
             "Proceeding with the available output."
         )
 
     # ── Stage 2 : Playwright Execution ────────────────────────────────────
     print("\n" + "=" * 60)
-    print("  STAGE 2 — PlaywrightAgent: executing smoke tests in browser")
+    print("  STAGE 2 — Playwright agent: executing smoke tests in browser")
     print("=" * 60)
 
     test_execution = await run_playwright(
@@ -99,7 +101,7 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
         user_key=user_key,
     )
 
-    print("\n[PlaywrightAgent] Execution complete.")
+    print("\n[Playwright agent] Execution complete.")
     print("-" * 60)
     print(test_execution)
     print("-" * 60)
@@ -111,9 +113,11 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
 
     try:
         extracted_records = extract_structured_evidence(test_execution)
+        stage1_issue_keys = _extract_stage1_issue_keys(bug_analysis)
         validated_records, verification_errors = validate_evidence_records(
             extracted_records,
             project_root=PROJECT_ROOT,
+            allowed_issue_keys=stage1_issue_keys if stage1_issue_keys else None,
         )
         verification_result = {
             "status": "VALIDATED" if not verification_errors else "INCONCLUSIVE",
@@ -141,20 +145,30 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
     print("-" * 60)
 
     # ── Stage 3 : Jira Update ─────────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("  STAGE 3 — JiraReporter: posting results back to Jira")
-    print("=" * 60)
+    if not validated_records:
+        jira_update = (
+            "SKIPPED: No validated evidence records to post. "
+            "Stage 3 Jira updates were intentionally skipped."
+        )
+        print("\n" + "=" * 60)
+        print("  STAGE 3 — Jira comment publisher: skipped (no validated records)")
+        print("=" * 60)
+        print(jira_update)
+    else:
+        print("\n" + "=" * 60)
+        print("  STAGE 3 — Jira comment publisher: posting results back to Jira")
+        print("=" * 60)
 
-    jira_update = await run_jira_reporter(
-        bug_analysis_report=bug_analysis,
-        validated_evidence=validated_records,
-        verification_errors=verification_result.get("errors", []),
-    )
+        jira_update = await run_comment_publisher(
+            bug_analysis_report=bug_analysis,
+            validated_evidence=validated_records,
+            verification_errors=verification_result.get("errors", []),
+        )
 
-    print("\n[JiraReporter] Jira update complete.")
-    print("-" * 60)
-    print(jira_update)
-    print("-" * 60)
+        print("\n[Jira comment publisher] Jira update complete.")
+        print("-" * 60)
+        print(jira_update)
+        print("-" * 60)
 
     return {
         "bug_analysis": bug_analysis,

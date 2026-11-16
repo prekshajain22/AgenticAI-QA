@@ -5,22 +5,12 @@ import pytest
 from automation.utils.data_reader import read_json
 
 
-def test_read_json_returns_dict():
-    """read_json parses test_data/users.json and returns a dict."""
-    result = read_json("test_data/users.json")
-    assert isinstance(result, dict)
-
-
-def test_read_json_has_expected_users():
-    """users.json contains the standard_user and invalid_user entries."""
+def test_read_json_users_have_expected_entries_and_credentials():
+    """users.json parses to a dict with standard_user/invalid_user, each with credentials."""
     users = read_json("test_data/users.json")
+    assert isinstance(users, dict)
     assert "standard_user" in users
     assert "invalid_user" in users
-
-
-def test_read_json_user_has_credentials():
-    """Each user entry has username and password keys."""
-    users = read_json("test_data/users.json")
     for user in users.values():
         assert "username" in user
         assert "password" in user

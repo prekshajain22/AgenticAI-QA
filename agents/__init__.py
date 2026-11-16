@@ -7,10 +7,10 @@ Import the two core framework classes from here:
 
 Sub-packages
 ------------
-agents.jira          — Jira MCP agents (jira_bug_analyser)
+agents.jira          — Jira MCP components (jira_bug_analyst_agent, jira_comment_publisher)
 agents.playwright    — Playwright MCP automation agent
 agents.pipelines     — Multi-agent pipeline orchestrators
-agents.analysis      — AI-powered test failure analysis
+agents.analysis      — Test failure analysis (ai_failure_agent, report_analyzer)
 agents.specs         — Markdown agent specs (system prompts + metadata)
 agents.agent_specs   — Loader for agent specs (Markdown + YAML frontmatter)
 """

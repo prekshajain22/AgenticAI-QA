@@ -13,55 +13,67 @@ Usage:
 """
 
 import asyncio
-import os
 import sys
+from contextlib import suppress
+from pathlib import Path
 
-from dotenv import load_dotenv
+from autogen_ext.tools.mcp import McpWorkbench
+from mcp.shared.exceptions import McpError
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 async def main() -> None:
-    jira_url = os.getenv("JIRA_URL")
-    jira_username = os.getenv("JIRA_USERNAME")
-    jira_api_token = os.getenv("JIRA_API_TOKEN")
+    # Local import after sys.path adjustment
+    from agents.mcp_config import MCPConfig
 
-    missing = [
-        k
-        for k, v in {
-            "JIRA_URL": jira_url,
-            "JIRA_USERNAME": jira_username,
-            "JIRA_API_TOKEN": jira_api_token,
-        }.items()
-        if not v
-    ]
-
-    if missing:
-        print(f"❌ Missing env vars: {', '.join(missing)}")
-        print("   Set them in your .env file and retry.")
+    try:
+        server_params = MCPConfig.jira_server_params()
+    except ValueError as exc:
+        print(f"❌ Configuration error: {exc}")
         sys.exit(1)
 
-    # Import here so missing credentials fail fast above
-    from autogen_ext.tools.mcp import McpWorkbench, StdioServerParams
-
-    server_params = StdioServerParams(
-        command="uvx",
-        args=["mcp-atlassian"],
-        env={
-            "JIRA_URL": jira_url,
-            "JIRA_USERNAME": jira_username,
-            "JIRA_API_TOKEN": jira_api_token,
-        },
-    )
+    # Some environments are slower to initialize MCP server + first tool listing.
+    # Retry list_tools with backoff to avoid transient initialize/list timeout failures.
+    attempts = 4
+    delay = 2.0
 
     print("Connecting to mcp-atlassian via uvx ...")
     async with McpWorkbench(server_params) as mcp:
-        print("✅ Connected to MCP")
-        tools = await mcp.list_tools()
-        print(f"Found {len(tools)} tools:")
-        for tool in tools:
-            print(f"  - {tool['name']}")
+        for attempt in range(1, attempts + 1):
+            try:
+                print("✅ Connected to MCP")
+                tools = await mcp.list_tools()
+                print(f"Found {len(tools)} tools:")
+                for tool in tools:
+                    name = (
+                        tool["name"] if isinstance(tool, dict) else getattr(tool, "name", str(tool))
+                    )
+                    print(f"  - {name}")
+                return
+            except (McpError, TimeoutError) as exc:
+                if attempt == attempts:
+                    raise
+                print(
+                    f"⚠️ list_tools timeout/error (attempt {attempt}/{attempts}): {exc}. "
+                    f"Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+                delay *= 2
+            except Exception as exc:
+                # Keep diagnostics script resilient to shape changes in tool objects etc.
+                if attempt == attempts:
+                    raise
+                print(
+                    f"⚠️ Unexpected MCP error (attempt {attempt}/{attempts}): {exc}. "
+                    f"Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+                delay *= 2
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    with suppress(KeyboardInterrupt):
+        asyncio.run(main())

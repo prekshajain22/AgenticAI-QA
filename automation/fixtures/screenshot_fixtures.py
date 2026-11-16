@@ -7,29 +7,27 @@ import pytest
 def capture_screenshot_on_failure(request):
     """Capture a screenshot on test failure.
 
-    Uses request.getfixturevalue('page') lazily so this fixture is safe
-    for unit tests that have no Playwright page — it simply skips the
-    screenshot rather than forcing a browser launch.
+    Resolve the page fixture *before* teardown to avoid pytest's
+    deprecation/error when calling getfixturevalue during teardown.
     """
-    yield
-
-    if hasattr(request.node, "rep_call") and request.node.rep_call.failed:
+    page = None
+    if "page" in request.fixturenames:
         try:
             page = request.getfixturevalue("page")
         except pytest.FixtureLookupError:
-            return  # No Playwright page available (unit test) — skip screenshot
+            page = None
 
+    yield
+
+    if hasattr(request.node, "rep_call") and request.node.rep_call.failed and page is not None:
         screenshot_dir = "output/screenshots"
-
         os.makedirs(screenshot_dir, exist_ok=True)
 
         screenshot_path = f"{screenshot_dir}/{request.node.name}.png"
-
         page.screenshot(
             path=screenshot_path,
             full_page=True,
         )
-
         request.node.screenshot_path = screenshot_path
 
 

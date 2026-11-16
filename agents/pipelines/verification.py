@@ -49,13 +49,14 @@ def extract_structured_evidence(report_text: str) -> list[dict[str, Any]]:
 def validate_evidence_records(
     records: list[dict[str, Any]],
     project_root: str | Path,
+    allowed_issue_keys: set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Validate Stage 2 evidence records and return accepted records + errors.
 
     This validator is intentionally tolerant:
     - it rejects only records that are structurally invalid / contradictory
     - it allows evidence_type == "none" (agent couldn't capture artifacts)
-    - it does not require issue_key (scenario steps may not map 1:1 to Jira)
+    - it can optionally enforce issue_key membership against Stage-1 fetched keys
 
     Goal: avoid defaulting the whole Jira update to INCONCLUSIVE due to
     over-strict validation, while still preventing garbage write-backs.
@@ -90,6 +91,15 @@ def validate_evidence_records(
         if status not in ALLOWED_STATUSES:
             errors.append(f"{prefix}: invalid status '{status}'")
             continue
+        if allowed_issue_keys is not None:
+            if not issue_key:
+                errors.append(f"{prefix}: issue_key is required when allowed_issue_keys is set")
+                continue
+            if issue_key not in allowed_issue_keys:
+                errors.append(
+                    f"{prefix}: issue_key '{issue_key}' was not present in Stage 1 fetched issues"
+                )
+                continue
         if not expected:
             errors.append(f"{prefix}: expected is required")
             continue

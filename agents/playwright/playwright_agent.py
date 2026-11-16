@@ -21,16 +21,12 @@ import logging
 import time
 
 from autogen_ext.tools.mcp import McpWorkbench
-from dotenv import load_dotenv
 
 from agents.agent_factory import AgentFactory
 from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
 from config.settings import BASE_URL
 
-load_dotenv()
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +73,7 @@ async def run(
     Parameters
     ----------
     smoke_test_scenario:
-        Plain-text step-by-step test scenario (typically from JiraBugAnalyser).
+        Plain-text step-by-step test scenario (typically from the Jira bug analyst agent).
     user_key:
         User identifier hint passed to the agent (e.g. ``"standard_user"``).
 
