@@ -68,6 +68,25 @@ def test_pipeline_skips_jira_when_no_valid_evidence(
     assert result["jira_update"].startswith("SKIPPED")
 
 
+def test_pipeline_blocks_jira_writeback_when_stage1_issues_are_missing(monkeypatch, tmp_path):
+    record = make_record("SAUCE-1")
+    analysis = AsyncMock(return_value="No Jira issue keys available.\nNo handoff.")
+    browser = AsyncMock(return_value=make_report([record]))
+    reporter = AsyncMock()
+    monkeypatch.setattr(jira_playwright, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(jira_playwright, "run_bug_analyst", analysis)
+    monkeypatch.setattr(jira_playwright, "run_playwright", browser)
+    monkeypatch.setattr(jira_playwright, "run_comment_publisher", reporter)
+
+    result = asyncio.run(jira_playwright.run())
+
+    verification = json.loads(result["verification"])
+    assert verification["status"] == "INCONCLUSIVE"
+    assert any("Stage 1 did not provide Jira issue keys" in error for error in verification["errors"])
+    reporter.assert_not_awaited()
+    assert result["jira_update"].startswith("SKIPPED")
+
+
 def test_pipeline_passes_validated_evidence_to_reporter(monkeypatch, tmp_path):
     screenshot = tmp_path / "output" / "screenshots" / "result.png"
     screenshot.parent.mkdir(parents=True)
