@@ -72,6 +72,15 @@ def _build_issue_comment(issue_key: str, records: list[dict[str, Any]], errors: 
     return "\n".join(lines)
 
 
+def _tool_name(tool: Any) -> str | None:
+    """Return a tool name from either MCP dict payloads or typed tool objects."""
+    if isinstance(tool, dict):
+        name = tool.get("name")
+    else:
+        name = getattr(tool, "name", None)
+    return name if isinstance(name, str) else None
+
+
 async def run(
     bug_analysis_report: str,
     validated_evidence: list[dict[str, Any]],
@@ -114,7 +123,7 @@ async def run(
 
     async with McpWorkbench(MCPConfig.jira_server_params()) as jira_mcp:
         tools = await jira_mcp.list_tools()
-        if not any(tool.get("name") == "jira_add_comment" for tool in tools):
+        if not any(_tool_name(tool) == "jira_add_comment" for tool in tools):
             raise RuntimeError("jira_add_comment tool is not available in Jira MCP server.")
 
         for issue_key, issue_records in records_by_issue.items():
