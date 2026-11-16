@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -108,7 +109,9 @@ def test_pipeline_start_poll_and_complete_without_external_services(monkeypatch,
             "verification": "{}",
         }
     )
-    monkeypatch.setattr(test_runner.threading, "Thread", DeferredThread)
+    # Patch only the service module's view of threading, not the global module,
+    # so other code (e.g. ThreadPoolExecutor) keeps using the real Thread.
+    monkeypatch.setattr(test_runner, "threading", SimpleNamespace(Thread=DeferredThread))
     monkeypatch.setattr(jira_playwright, "run", pipeline)
     monkeypatch.setattr(
         test_runner,

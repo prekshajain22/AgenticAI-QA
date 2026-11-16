@@ -22,9 +22,14 @@ class InventoryPage(BasePage):
         self.logger.info("Verifying inventory page is loaded")
         return self.inventory_container.is_visible()
 
+    def _wait_for_products(self, timeout=15000):
+        """Wait for the product list to render (locator.count() does not wait)."""
+        self.page.wait_for_selector(InventoryLocators.PRODUCT_ITEM, timeout=timeout)
+
     def get_product_count(self):
         """Get total number of products displayed"""
         self.logger.info("Getting product count")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM).count()
         self.logger.info(f"Found {products} products")
         return products
@@ -32,6 +37,7 @@ class InventoryPage(BasePage):
     def add_product_by_index(self, index):
         """Add product to cart by index"""
         self.logger.info(f"Adding product at index {index} to cart")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM).nth(index)
         add_button = products.locator(InventoryLocators.ADD_TO_CART_BUTTON)
         add_button.click()
@@ -40,7 +46,7 @@ class InventoryPage(BasePage):
     def add_product_by_name(self, product_name):
         """Add product to cart by product name"""
         self.logger.info(f"Adding product '{product_name}' to cart")
-        self.page.wait_for_selector(InventoryLocators.PRODUCT_ITEM, timeout=15000)
+        self._wait_for_products()
 
         product_card = self.page.locator(
             InventoryLocators.PRODUCT_ITEM,
@@ -59,6 +65,7 @@ class InventoryPage(BasePage):
     def remove_product_by_name(self, product_name):
         """Remove product from cart by product name"""
         self.logger.info(f"Removing product '{product_name}' from cart")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM)
         count = products.count()
 
@@ -92,6 +99,7 @@ class InventoryPage(BasePage):
     def get_product_price(self, product_name):
         """Get price of a specific product"""
         self.logger.info(f"Getting price for product '{product_name}'")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM)
         count = products.count()
 
