@@ -59,30 +59,22 @@ def test_pipeline_skips_jira_when_no_valid_evidence(
     browser.assert_awaited_once_with(
         smoke_test_scenario=analysis.return_value, user_key="standard_user"
     )
-    reporter.assert_not_awaited()
     verification = json.loads(result["verification"])
     assert verification["status"] == "INCONCLUSIVE"
-    assert any(expected_errors in error for error in verification["errors"])
-    assert result["jira_update"].startswith("SKIPPED")
 
-
-def test_pipeline_blocks_jira_writeback_when_stage1_issues_are_missing(monkeypatch, tmp_path):
-    record = make_record("SAUCE-1")
-    analysis = AsyncMock(return_value="No Jira issue keys available.\nNo handoff.")
-    browser = AsyncMock(return_value=make_report([record]))
-    reporter = AsyncMock()
-    monkeypatch.setattr(jira_playwright, "PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr(jira_playwright, "run_bug_analyst", analysis)
-    monkeypatch.setattr(jira_playwright, "run_playwright", browser)
-    monkeypatch.setattr(jira_playwright, "run_comment_publisher", reporter)
-
-    result = asyncio.run(jira_playwright.run())
-
-    verification = json.loads(result["verification"])
-    assert verification["status"] == "INCONCLUSIVE"
-    assert any("Stage 1 did not provide Jira issue keys" in error for error in verification["errors"])
-    reporter.assert_not_awaited()
-    assert result["jira_update"].startswith("SKIPPED")
+    if expected_errors == "markers":
+        # When the browser stage fails before producing evidence, the pipeline now
+        # posts deterministic INCONCLUSIVE comments per Stage-1 issue key.
+        assert verification["validated"] is True
+        assert verification["errors"] == []
+        assert len(verification["records"]) == 1
+        assert verification["records"][0]["status"] == "INCONCLUSIVE"
+        reporter.assert_awaited_once()
+        assert result["jira_update"]  # should be non-empty
+    else:
+        assert any(expected_errors in error for error in verification.get("errors", []))
+        reporter.assert_not_awaited()
+        assert result["jira_update"].startswith("SKIPPED")
 
 
 def test_pipeline_passes_validated_evidence_to_reporter(monkeypatch, tmp_path):
@@ -154,3 +146,33 @@ def test_pipeline_blocks_jira_writeback_when_stage1_issues_are_missing(monkeypat
     assert verification["status"] == "INCONCLUSIVE"
     assert any("refusing Jira write-back" in error for error in verification["errors"])
     assert result["jira_update"].startswith("SKIPPED")
+
+
+def test_pipeline_fans_out_run_level_inconclusive_to_every_stage1_issue(monkeypatch, tmp_path):
+    """A whole-run failure (e.g. LLM 429) reports one INCONCLUSIVE record with no issue_key.
+
+    It must be expanded to every Stage 1 issue so Jira is still updated.
+    """
+    run_level = make_record(
+        "",
+        step="Playwright agent execution",
+        status="INCONCLUSIVE",
+        actual="Playwright agent failed before completing execution: 429",
+    )
+    analysis = AsyncMock(return_value="SAUCE-1: Bug\nSAUCE-2: Bug\nHANDOFF TO AUTOMATION")
+    browser = AsyncMock(return_value=make_report([run_level]))
+    reporter = AsyncMock(return_value="JIRA UPDATED")
+    monkeypatch.setattr(jira_playwright, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(jira_playwright, "run_bug_analyst", analysis)
+    monkeypatch.setattr(jira_playwright, "run_playwright", browser)
+    monkeypatch.setattr(jira_playwright, "run_comment_publisher", reporter)
+
+    result = asyncio.run(jira_playwright.run())
+
+    verification = json.loads(result["verification"])
+    assert verification["validated"] is True
+    assert verification["errors"] == []
+    assert [r["issue_key"] for r in verification["records"]] == ["SAUCE-1", "SAUCE-2"]
+    assert all(r["status"] == "INCONCLUSIVE" for r in verification["records"])
+    reporter.assert_awaited_once()
+    assert result["jira_update"] == "JIRA UPDATED"

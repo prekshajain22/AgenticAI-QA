@@ -129,9 +129,27 @@ async def run(
         logger.info("Starting Playwright agent run with user_key: %s", user_key)
         try:
             result = await agent.run(task=_build_task(smoke_test_scenario, user_key))
-            content = result.messages[-1].content
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError("Playwright agent returned an empty final message.")
+
+            # AutoGen conversations often end with tool calls/results whose content is None.
+            # We need the last assistant *text* message, not necessarily the last message.
+            content: str | None = None
+            for message in reversed(getattr(result, "messages", []) or []):
+                msg_content = getattr(message, "content", None)
+                if isinstance(msg_content, str) and msg_content.strip():
+                    content = msg_content
+                    break
+
+            if not content:
+                raise ValueError("Playwright agent returned no non-empty text message.")
+
+            # Enforce downstream contract: verification requires these markers.
+            if (
+                "STRUCTURED_EVIDENCE_START" not in content
+                or "STRUCTURED_EVIDENCE_END" not in content
+            ):
+                raise ValueError(
+                    "Playwright agent did not emit structured evidence markers in its final report."
+                )
         except Exception as exc:
             logger.exception("Agent run failed")
             return _build_inconclusive_execution_report(str(exc))

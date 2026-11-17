@@ -1,0 +1,383 @@
+{
+  "name": "QA Jira Pipeline v1 — Bug Analysis + Playwright + Jira Update",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -2464,
+        -176
+      ],
+      "id": "e9179c5f-743d-4873-91ea-06e40cc0c48d",
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.containers.internal:8080/run-jira-pipeline",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -2288,
+        -176
+      ],
+      "id": "349fcb10-c9f0-4f66-8fc6-64951df75899",
+      "name": "Start Jira Pipeline",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "MlUTkoALOzB14Wik",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -2112,
+        -176
+      ],
+      "id": "111fb7e2-03b1-4264-ab4c-e91ac97bb71b",
+      "name": "Wait 10 seconds",
+      "webhookId": "beec8802-efbf-45ce-b3ba-254acb313d91",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "http://host.containers.internal:8080/pipeline-status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1936,
+        -176
+      ],
+      "id": "891e7fdd-5234-4225-b1d9-22a821bfb6f0",
+      "name": "Poll Pipeline Status",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "MlUTkoALOzB14Wik",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "complete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1696,
+        -176
+      ],
+      "id": "a9f52700-0e55-4373-b368-195b7e64a0de",
+      "name": "Pipeline Complete?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "error",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1696,
+        32
+      ],
+      "id": "42a241cf-9193-4f98-b366-513852909ecf",
+      "name": "Pipeline Error?"
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1696,
+        -368
+      ],
+      "id": "75eaab70-7d62-48cd-b210-649e610eb4b0",
+      "name": "Still Running — Wait 10 seconds",
+      "webhookId": "d37e5e9e-5e5d-41bf-a5e5-f2422c431953"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const d = $json;\nreturn {\n  json: {\n    status:         d.status,\n    job_id:         d.job_id,\n    started_at:     d.started_at,\n    finished_at:    d.finished_at,\n    bug_analysis:   d.bug_analysis || 'No bug analysis available.',\n    test_execution: d.test_execution || 'No test execution report available.',\n    jira_update:    d.jira_update || 'No Jira comments posted.'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1488,
+        -176
+      ],
+      "id": "3a4afb8a-bf39-4703-8adf-7b3c198b2af0",
+      "name": "Format Pipeline Results"
+    },
+    {
+      "parameters": {
+        "url": "http://host.containers.internal:8080/download-pipeline-pdf",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1280,
+        -176
+      ],
+      "id": "3f539571-0492-4313-981b-33c09fc17447",
+      "name": "Download Pipeline PDF",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "MlUTkoALOzB14Wik",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "=Jira Pipeline: {{ $('Format Pipeline Results').item.json.status.toUpperCase() }} | {{ new Date($('Format Pipeline Results').item.json.finished_at).toLocaleDateString() }}",
+        "html": "=<h2>Jira Bug Verification Pipeline Report</h2>\n<p><b>Status:</b> {{ $('Format Pipeline Results').item.json.status.toUpperCase() }}</p>\n<p><b>Job ID:</b> {{ $('Format Pipeline Results').item.json.job_id }}</p>\n<p><b>Started:</b> {{ $('Format Pipeline Results').item.json.started_at }}</p>\n<p><b>Finished:</b> {{ $('Format Pipeline Results').item.json.finished_at }}</p>\n<hr>\n<h3>Stage 1 — Jira Bug Analysis</h3>\n<pre>{{ $('Format Pipeline Results').item.json.bug_analysis }}</pre>\n<hr>\n<h3>Stage 2 — Playwright Browser Execution</h3>\n<pre>{{ $('Format Pipeline Results').item.json.test_execution }}</pre>\n<hr>\n<h3>Stage 3 — Jira Comments Posted</h3>\n<pre>{{ $('Format Pipeline Results').item.json.jira_update }}</pre>\n<p>Full report attached as PDF.</p>",
+        "options": {
+          "fileAttachments": "data"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -1088,
+        -176
+      ],
+      "id": "c967b43c-a7a0-4205-96a1-8765dfd387d4",
+      "name": "Send Pipeline Report",
+      "webhookId": "7609gdd3-d1c3-5bc6-c3e9-e469b9fc4b37",
+      "credentials": {
+        "smtp": {
+          "id": "KZ1HplfZyon3Zx8z",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "prekshajain22@gmail.com",
+        "toEmail": "prekjain@emeal.nttdata.com",
+        "subject": "=Jira Pipeline ERROR | {{ new Date().toLocaleDateString() }}",
+        "html": "=<h2>Jira Pipeline Failed</h2>\n<p><b>Job ID:</b> {{ $json.job_id }}</p>\n<p><b>Started:</b> {{ $json.started_at }}</p>\n<p><b>Error:</b></p>\n<pre>{{ $json.error }}</pre>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -1472,
+        32
+      ],
+      "id": "45050854-121f-4619-ae7c-17b350e13160",
+      "name": "Send Error Alert",
+      "webhookId": "6cd6f7bc-8229-455d-ab51-c6f79ec3c7a7",
+      "credentials": {
+        "smtp": {
+          "id": "KZ1HplfZyon3Zx8z",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Start Jira Pipeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start Jira Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Wait 10 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 10 seconds": {
+      "main": [
+        [
+          {
+            "node": "Poll Pipeline Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Poll Pipeline Status": {
+      "main": [
+        [
+          {
+            "node": "Pipeline Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pipeline Complete?": {
+      "main": [
+        [
+          {
+            "node": "Format Pipeline Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pipeline Error?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pipeline Error?": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Still Running — Wait 10 seconds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still Running — Wait 10 seconds": {
+      "main": [
+        [
+          {
+            "node": "Poll Pipeline Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pipeline Results": {
+      "main": [
+        [
+          {
+            "node": "Download Pipeline PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Pipeline PDF": {
+      "main": [
+        [
+          {
+            "node": "Send Pipeline Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d3bfd512-5b11-469a-a1ee-f805d1b1ecd3",
+  "meta": {
+    "instanceId": "7bd9bc721d522433b882204cf8a7b5b941c3435fab2b9d23a33f5aaf704af7cd"
+  },
+  "nodeGroups": [],
+  "id": "Q24eKVSaDd4fDj7v",
+  "tags": []
+}

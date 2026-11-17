@@ -82,6 +82,35 @@ def test_publisher_groups_records_and_builds_comments(monkeypatch):
     assert "SAUCE-1, SAUCE-2" in result
 
 
+def test_publisher_overall_inconclusive_when_any_record_is_inconclusive(monkeypatch):
+    async def validate_call(name, arguments):
+        assert name == "jira_add_comment"
+        assert set(arguments) == {"issue_key", "body"}
+        assert arguments["issue_key"] == "SAUCE-1"
+        assert "Overall Result: INCONCLUSIVE" in arguments["body"]
+        # sanity: also show both records were counted
+        assert "Summary: PASS=1, FAIL=0, INCONCLUSIVE=1" in arguments["body"]
+        return SimpleNamespace(is_error=False)
+
+    call_tool = AsyncMock(side_effect=validate_call)
+    monkeypatch.setattr(
+        jira_comment_publisher,
+        "McpWorkbench",
+        fake_workbench([{"name": "jira_add_comment"}], call_tool),
+    )
+    monkeypatch.setattr(jira_comment_publisher.MCPConfig, "jira_server_params", lambda: "fake")
+
+    result = asyncio.run(
+        jira_comment_publisher.run(
+            "analysis",
+            [record("SAUCE-1", "PASS"), record("SAUCE-1", "INCONCLUSIVE")],
+        )
+    )
+
+    assert call_tool.await_count == 1
+    assert "SAUCE-1" in result
+
+
 def test_publisher_fails_when_comment_tool_is_missing(monkeypatch):
     call_tool = AsyncMock()
     monkeypatch.setattr(jira_comment_publisher, "McpWorkbench", fake_workbench([], call_tool))

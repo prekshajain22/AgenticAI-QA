@@ -99,12 +99,18 @@ def test_build_task_embeds_scenario_user_and_canonical_schema():
 
 
 def test_run_returns_agent_report_on_success(monkeypatch):
-    agent = SimpleNamespace(run=AsyncMock(return_value=_reply("all good TESTING COMPLETE")))
+    good_report = """all good
+
+STRUCTURED_EVIDENCE_START
+[]
+STRUCTURED_EVIDENCE_END
+TESTING COMPLETE"""
+    agent = SimpleNamespace(run=AsyncMock(return_value=_reply(good_report)))
     _install_fakes(monkeypatch, playwright_agent, [agent])
 
     report = asyncio.run(playwright_agent.run("scenario", user_key="standard_user"))
 
-    assert report == "all good TESTING COMPLETE"
+    assert report == good_report
     assert "scenario" in agent.run.call_args.kwargs["task"]
 
 
@@ -129,7 +135,10 @@ def test_run_treats_empty_final_message_as_inconclusive(monkeypatch, content):
     report = asyncio.run(playwright_agent.run("scenario"))
 
     records = extract_structured_evidence(report)
-    assert "empty final message" in records[0]["actual"]
+    assert (
+        "no non-empty text message" in records[0]["actual"].lower()
+        or "empty final message" in records[0]["actual"].lower()
+    )
 
 
 # ---------------------------------------------------------------------------

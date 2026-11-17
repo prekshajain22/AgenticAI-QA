@@ -56,6 +56,31 @@ def _extract_stage1_issue_keys(bug_analysis: str) -> set[str]:
     return set(re.findall(r"\b[A-Z][A-Z0-9]+-\d+\b", bug_analysis or ""))
 
 
+def _fan_out_run_level_inconclusive(records: list, issue_keys: set[str]) -> list:
+    """Expand run-level INCONCLUSIVE records (empty issue_key) to every Stage 1 issue.
+
+    When the browser stage fails as a whole (e.g. LLM rate limit), it can only report
+    a single INCONCLUSIVE record that is not tied to any issue. Without this expansion
+    verification rejects it and Jira never learns the run was inconclusive.
+    """
+    if not issue_keys:
+        return records
+
+    expanded: list = []
+    for record in records:
+        is_run_level = (
+            isinstance(record, dict)
+            and record.get("status") == "INCONCLUSIVE"
+            and not str(record.get("issue_key", "")).strip()
+        )
+        if is_run_level:
+            for key in sorted(issue_keys):
+                expanded.append({**record, "issue_key": key})
+        else:
+            expanded.append(record)
+    return expanded
+
+
 async def run(user_key: str = "standard_user") -> dict[str, str]:
     """Run the full Jira bug analyst -> Playwright agent -> Jira comment publisher pipeline.
 
@@ -111,11 +136,13 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
     print("  VERIFICATION LAYER — validating structured evidence")
     print("=" * 60)
 
+    stage1_issue_keys = _extract_stage1_issue_keys(bug_analysis)
+
     try:
         extracted_records = extract_structured_evidence(test_execution)
-        stage1_issue_keys = _extract_stage1_issue_keys(bug_analysis)
         if not stage1_issue_keys:
             raise ValueError("Stage 1 did not provide Jira issue keys; refusing Jira write-back.")
+        extracted_records = _fan_out_run_level_inconclusive(extracted_records, stage1_issue_keys)
         validated_records, verification_errors = validate_evidence_records(
             extracted_records,
             project_root=PROJECT_ROOT,
@@ -128,8 +155,36 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
             "errors": verification_errors,
         }
     except ValueError as exc:
+        # If Stage 2 crashed/was rate-limited, we still want to write back a deterministic
+        # INCONCLUSIVE update per Stage-1 issue, so Jira doesn't incorrectly show PASS.
         verification_result = build_inconclusive_report([str(exc)])
-        validated_records = []
+
+        if stage1_issue_keys:
+            expected_text = "Smoke test scenario executes and returns structured evidence per step."
+            actual_text = (
+                "Playwright stage ended inconclusively: "
+                f"{verification_result['errors'][0]}"
+            )
+            validated_records = [
+                {
+                    "step": "Pipeline execution (Playwright agent failure)",
+                    "status": "INCONCLUSIVE",
+                    "issue_key": issue_key,
+                    "expected": expected_text,
+                    "actual": actual_text,
+                    "screenshot_path": "",
+                    "evidence_type": "none",
+                }
+                for issue_key in sorted(stage1_issue_keys)
+            ]
+            verification_result = {
+                "status": "INCONCLUSIVE",
+                "validated": True,
+                "records": validated_records,
+                "errors": [],
+            }
+        else:
+            validated_records = []
 
     verification_summary = summarize_verification(
         validated_records=validated_records,
