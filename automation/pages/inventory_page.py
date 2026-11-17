@@ -22,9 +22,14 @@ class InventoryPage(BasePage):
         self.logger.info("Verifying inventory page is loaded")
         return self.inventory_container.is_visible()
 
+    def _wait_for_products(self, timeout=15000):
+        """Wait for the product list to render (locator.count() does not wait)."""
+        self.page.wait_for_selector(InventoryLocators.PRODUCT_ITEM, timeout=timeout)
+
     def get_product_count(self):
         """Get total number of products displayed"""
         self.logger.info("Getting product count")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM).count()
         self.logger.info(f"Found {products} products")
         return products
@@ -32,6 +37,7 @@ class InventoryPage(BasePage):
     def add_product_by_index(self, index):
         """Add product to cart by index"""
         self.logger.info(f"Adding product at index {index} to cart")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM).nth(index)
         add_button = products.locator(InventoryLocators.ADD_TO_CART_BUTTON)
         add_button.click()
@@ -40,23 +46,26 @@ class InventoryPage(BasePage):
     def add_product_by_name(self, product_name):
         """Add product to cart by product name"""
         self.logger.info(f"Adding product '{product_name}' to cart")
-        products = self.page.locator(InventoryLocators.PRODUCT_ITEM)
-        count = products.count()
+        self._wait_for_products()
 
-        for i in range(count):
-            name_element = products.nth(i).locator(InventoryLocators.PRODUCT_NAME)
-            if name_element.text_content().strip() == product_name:
-                add_button = products.nth(i).locator(InventoryLocators.ADD_TO_CART_BUTTON)
-                add_button.click()
-                self.logger.info(f"Product '{product_name}' added to cart")
-                return True
+        product_card = self.page.locator(
+            InventoryLocators.PRODUCT_ITEM,
+            has=self.page.locator(InventoryLocators.PRODUCT_NAME, has_text=product_name),
+        ).first
 
-        self.logger.warning(f"Product '{product_name}' not found")
-        return False
+        if product_card.count() == 0:
+            self.logger.warning(f"Product '{product_name}' not found")
+            return False
+
+        add_button = product_card.locator(InventoryLocators.ADD_TO_CART_BUTTON).first
+        add_button.click()
+        self.logger.info(f"Product '{product_name}' added to cart")
+        return True
 
     def remove_product_by_name(self, product_name):
         """Remove product from cart by product name"""
         self.logger.info(f"Removing product '{product_name}' from cart")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM)
         count = products.count()
 
@@ -90,6 +99,7 @@ class InventoryPage(BasePage):
     def get_product_price(self, product_name):
         """Get price of a specific product"""
         self.logger.info(f"Getting price for product '{product_name}'")
+        self._wait_for_products()
         products = self.page.locator(InventoryLocators.PRODUCT_ITEM)
         count = products.count()
 

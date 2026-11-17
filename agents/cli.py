@@ -11,7 +11,7 @@ List available agent specs:
     python -m agents.cli list
 
 Render the final system prompt (after variable substitution):
-    python -m agents.cli render jira_bug_analyst --var project_key=CRED 
+    python -m agents.cli render jira_bug_analyst --var project_key=CRED
     --var project_name=CreditCardBanking
 
 Note: The full 'run' (LLM execution) command will be added next once we agree on

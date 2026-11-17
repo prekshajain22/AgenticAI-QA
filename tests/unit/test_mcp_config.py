@@ -1,5 +1,6 @@
 """Unit tests for agents/mcp_config.py  (MCPConfig class)."""
 
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -8,26 +9,62 @@ from autogen_ext.tools.mcp import StdioServerParams
 
 from agents.mcp_config import MCPConfig
 
-
-def test_mcp_config_is_a_class():
-    assert isinstance(MCPConfig, type)
-
-
 # ---------------------------------------------------------------------------
 # gemini_client
 # ---------------------------------------------------------------------------
 
 
-def test_gemini_client_raises_without_api_key():
+def test_gemini_client_requires_api_key_and_returns_openai_compatible_client():
     with patch("agents.mcp_config.GEMINI_API_KEY", ""):
         with pytest.raises(ValueError, match="GEMINI_API_KEY"):
             MCPConfig.gemini_client()
-
-
-def test_gemini_client_returns_openai_compatible_client():
     with patch("agents.mcp_config.GEMINI_API_KEY", "fake-key"):
-        client = MCPConfig.gemini_client()
-    assert isinstance(client, OpenAIChatCompletionClient)
+        assert isinstance(MCPConfig.gemini_client(), OpenAIChatCompletionClient)
+
+
+# ---------------------------------------------------------------------------
+# openrouter_client / default_client
+# ---------------------------------------------------------------------------
+
+
+def test_openrouter_client_requires_api_key_and_returns_openai_compatible_client():
+    with patch("agents.mcp_config.OPENROUTER_API_KEY", ""):
+        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+            MCPConfig.openrouter_client()
+    with patch("agents.mcp_config.OPENROUTER_API_KEY", "fake-key"):
+        assert isinstance(MCPConfig.openrouter_client(), OpenAIChatCompletionClient)
+
+
+def test_default_client_prefers_openrouter_over_gemini():
+    with (
+        patch("agents.mcp_config.OPENROUTER_API_KEY", "or-key"),
+        patch("agents.mcp_config.GEMINI_API_KEY", "gem-key"),
+        patch.object(MCPConfig, "openrouter_client", return_value="openrouter") as openrouter,
+        patch.object(MCPConfig, "gemini_client", return_value="gemini") as gemini,
+    ):
+        assert MCPConfig.default_client() == "openrouter"
+    openrouter.assert_called_once()
+    gemini.assert_not_called()
+
+
+def test_default_client_falls_back_to_gemini_when_no_openrouter_key():
+    with (
+        patch("agents.mcp_config.OPENROUTER_API_KEY", ""),
+        patch("agents.mcp_config.GEMINI_API_KEY", "gem-key"),
+        patch.object(MCPConfig, "openrouter_client", return_value="openrouter") as openrouter,
+        patch.object(MCPConfig, "gemini_client", return_value="gemini"),
+    ):
+        assert MCPConfig.default_client() == "gemini"
+    openrouter.assert_not_called()
+
+
+def test_default_client_raises_when_no_keys_configured():
+    with (
+        patch("agents.mcp_config.OPENROUTER_API_KEY", ""),
+        patch("agents.mcp_config.GEMINI_API_KEY", ""),
+    ):
+        with pytest.raises(ValueError, match="No model API key found"):
+            MCPConfig.default_client()
 
 
 # ---------------------------------------------------------------------------
@@ -50,11 +87,12 @@ def test_jira_server_params_returns_correct_command_and_creds():
         patch("agents.mcp_config.JIRA_URL", "https://jira.example.com"),
         patch("agents.mcp_config.JIRA_USERNAME", "user@example.com"),
         patch("agents.mcp_config.JIRA_API_TOKEN", "token-xyz"),
+        patch("agents.mcp_config.MCP_ATLASSIAN_VERSION", "0.9.0"),
     ):
         params = MCPConfig.jira_server_params()
     assert isinstance(params, StdioServerParams)
     assert params.command == "uvx"
-    assert "mcp-atlassian" in params.args
+    assert "mcp-atlassian@0.9.0" in params.args
     assert params.env["JIRA_URL"] == "https://jira.example.com"
 
 
@@ -66,5 +104,9 @@ def test_jira_server_params_returns_correct_command_and_creds():
 def test_playwright_server_params_uses_npx_and_playwright_mcp():
     params = MCPConfig.playwright_server_params()
     assert isinstance(params, StdioServerParams)
-    assert params.command == "npx"
-    assert any("playwright" in arg.lower() for arg in params.args)
+    if sys.platform == "win32":
+        assert params.command == "cmd"
+        assert "npx" in params.args
+    else:
+        assert params.command == "npx"
+    assert any("@playwright/mcp@" in arg for arg in params.args)

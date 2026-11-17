@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -e ".[dev]"
 
       - name: Install Playwright browsers
         run: |
@@ -39,7 +39,7 @@ jobs:
           BASE_URL: "https://www.saucedemo.com"
           HEADLESS: "True"
         run: |
-          pytest -v -m "not integration"
+          pytest -v
 
       - name: Upload test report
         if: always()

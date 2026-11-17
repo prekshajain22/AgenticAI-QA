@@ -20,7 +20,10 @@ Application URL: {app_url}
 - **browser_click(target)** — click an element (use ref from snapshot).
 - **browser_type(target, text)** — type into an input (use ref from snapshot).
 - **browser_wait_for(text / textGone / time)** — wait for a condition.
-- **browser_take_screenshot(scale)** — take a screenshot at a checkpoint.
+- **browser_take_screenshot(filename, scale)** — take a screenshot at a checkpoint.
+  ALWAYS pass `filename` as `output/screenshots/<short-step-name>.png`
+  (for example `output/screenshots/step1-login-error.png`). Never use a bare
+  filename, and never save screenshots anywhere else.
 
 ## Execution rules
 
@@ -28,7 +31,9 @@ Application URL: {app_url}
 - Always call **browser_snapshot** to discover element references before
   interacting with a new page — do not guess selectors.
 - Use **browser_wait_for** after every action that triggers a page change.
-- Take a screenshot at each key checkpoint.
+- Take a screenshot at each key checkpoint, saved under `output/screenshots/`.
+  When you report evidence for that step, use exactly the same path as
+  `screenshot_path`.
 - Report every step result clearly: PASS or FAIL with details.
 - If a step fails, capture the error and continue with the remaining steps.
 - Complete ALL steps before writing the final summary.

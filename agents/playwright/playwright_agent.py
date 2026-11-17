@@ -21,16 +21,13 @@ import logging
 import time
 
 from autogen_ext.tools.mcp import McpWorkbench
-from dotenv import load_dotenv
 
 from agents.agent_factory import AgentFactory
 from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
+from agents.pipelines.evidence_schema import evidence_schema_prompt_block
 from config.settings import BASE_URL
 
-load_dotenv()
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +53,7 @@ def _build_inconclusive_execution_report(error_message: str) -> str:
     }
 
     return f"""## Playwright Execution Summary
-The browser automation stage ended inconclusively because 
+The browser automation stage ended inconclusively because
 the Playwright agent failed before completing the scenario.
 
 Error:
@@ -68,6 +65,37 @@ STRUCTURED_EVIDENCE_END
 TESTING COMPLETE"""
 
 
+def _build_task(smoke_test_scenario: str, user_key: str) -> str:
+    """Build the task prompt; the evidence schema comes from the canonical block."""
+    return f"""
+Execute the following smoke test scenario.
+
+Default user for authentication: {user_key}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SMOKE TEST SCENARIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{smoke_test_scenario}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Execute every step completely.
+
+For each verification step, include:
+- the related Jira issue key if one is present in the scenario
+- expected outcome
+- actual outcome
+- final status
+- evidence gathered, especially screenshot paths when screenshots were taken
+
+At the end of execution, output:
+1. a human-readable summary
+2. the machine-readable evidence block described below
+
+{evidence_schema_prompt_block()}
+- Write TESTING COMPLETE after the JSON block.
+"""
+
+
 async def run(
     smoke_test_scenario: str,
     user_key: str = "standard_user",
@@ -77,7 +105,7 @@ async def run(
     Parameters
     ----------
     smoke_test_scenario:
-        Plain-text step-by-step test scenario (typically from JiraBugAnalyser).
+        Plain-text step-by-step test scenario (typically from the Jira bug analyst agent).
     user_key:
         User identifier hint passed to the agent (e.g. ``"standard_user"``).
 
@@ -100,56 +128,28 @@ async def run(
         start_time = time.time()
         logger.info("Starting Playwright agent run with user_key: %s", user_key)
         try:
-            result = await agent.run(
-                task=f"""
-Execute the following smoke test scenario.
+            result = await agent.run(task=_build_task(smoke_test_scenario, user_key))
 
-Default user for authentication: {user_key}
+            # AutoGen conversations often end with tool calls/results whose content is None.
+            # We need the last assistant *text* message, not necessarily the last message.
+            content: str | None = None
+            for message in reversed(getattr(result, "messages", []) or []):
+                msg_content = getattr(message, "content", None)
+                if isinstance(msg_content, str) and msg_content.strip():
+                    content = msg_content
+                    break
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SMOKE TEST SCENARIO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-{smoke_test_scenario}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if not content:
+                raise ValueError("Playwright agent returned no non-empty text message.")
 
-Execute every step completely.
-
-For each verification step, include:
-- the related Jira issue key if one is present in the scenario
-- expected outcome
-- actual outcome
-- final status
-- evidence gathered, especially screenshot paths when screenshots were taken
-
-At the end of execution, output:
-1. a human-readable summary
-2. a machine-readable JSON array enclosed between the markers
-   STRUCTURED_EVIDENCE_START
-   and
-   STRUCTURED_EVIDENCE_END
-
-Each JSON item must use this schema:
-{{
-  "step": "<step description>",
-  "status": "PASS" | "FAIL" | "INCONCLUSIVE",
-  "issue_key": "<JIRA-123 or empty string>",
-  "expected": "<expected result>",
-  "actual": "<actual observed result>",
-  "screenshot_path": "<relative path or empty string>",
-  "evidence_type": "screenshot" | "dom_snapshot" | "trace" | "video" | "none"
-}}
-
-Rules:
-- Do not omit the JSON block.
-- Use only valid JSON.
-- Only use status values PASS, FAIL, or INCONCLUSIVE.
-- If a screenshot was not captured for a step, set screenshot_path to an empty string.
-- Write TESTING COMPLETE after the JSON block.
-""",
-            )
-            content = result.messages[-1].content
-            if not isinstance(content, str) or not content.strip():
-                raise ValueError("Playwright agent returned an empty final message.")
+            # Enforce downstream contract: verification requires these markers.
+            if (
+                "STRUCTURED_EVIDENCE_START" not in content
+                or "STRUCTURED_EVIDENCE_END" not in content
+            ):
+                raise ValueError(
+                    "Playwright agent did not emit structured evidence markers in its final report."
+                )
         except Exception as exc:
             logger.exception("Agent run failed")
             return _build_inconclusive_execution_report(str(exc))

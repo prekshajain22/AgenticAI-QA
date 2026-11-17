@@ -1,7 +1,7 @@
 """
 Flask test runner — synchronous execution.
 
-POST /run-tests  → runs pytest + AI analysis, returns full JSON result (blocks until done)
+POST /run-tests  → runs application BDD tests + AI analysis, returns full JSON result
 GET  /health     → liveness probe
 GET  /download-report → download the most recently generated PDF report
 """
@@ -32,6 +32,7 @@ from config.settings import (
     TEST_RUNNER_LOGS_DIR,
     TEST_RUNNER_OUTPUT_DIR,
     TEST_RUNNER_PIPELINE_STATUS_ENDPOINT,
+    TEST_RUNNER_PYTEST_TIMEOUT_SECONDS,
     TEST_RUNNER_QA_REPORT_FILENAME,
     TEST_RUNNER_REPORTS_DIR,
     TEST_RUNNER_RUN_JIRA_PIPELINE_ENDPOINT,
@@ -104,12 +105,12 @@ _latest_lock = threading.Lock()
 @app.route(TEST_RUNNER_RUN_TESTS_ENDPOINT, methods=["POST"])
 def run_tests():
     """
-    Run the full pytest suite and return results immediately.
+    Run the application BDD browser scenarios and return their results.
 
     The endpoint blocks until:
       1. pytest finishes
       2. the result JSON is parsed
-      3. ReportAnalysisAgent enriches every failure with classification,
+      3. ReportAnalyzer enriches every failure with classification,
          recommendation, root-cause, and AI analysis
       4. a PDF report is generated
 
@@ -145,6 +146,7 @@ def run_tests():
                 sys.executable,
                 "-m",
                 "pytest",
+                "tests/step_definitions",
                 "-v",
                 "--json-report",
                 f"--json-report-file={result_file}",
@@ -154,6 +156,7 @@ def run_tests():
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
+            timeout=TEST_RUNNER_PYTEST_TIMEOUT_SECONDS,
         )
         log.info("[run:%s] pytest exit code: %s", run_id, proc.returncode)
 
@@ -163,19 +166,19 @@ def run_tests():
         with open(result_file, encoding="utf-8") as fh:
             pytest_data = json.load(fh)
 
-        # ── Run ReportAnalysisAgent for enriched per-failure analysis ─────
+        # ── Run ReportAnalyzer for enriched per-failure analysis ──────────
         agent_lookup: dict = {}
         root_cause: str = ""
         try:
-            from agents.analysis.report_analysis_agent import ReportAnalysisAgent
+            from agents.analysis.report_analyzer import ReportAnalyzer
 
-            agent = ReportAnalysisAgent(str(result_file))
-            full_analysis = agent.generate_analysis()
+            analyzer = ReportAnalyzer(str(result_file))
+            full_analysis = analyzer.generate_analysis()
             root_cause = full_analysis.get("root_cause", "")
             for failure in full_analysis.get("failures", []):
                 agent_lookup[failure["test"]] = failure
         except Exception as agent_err:
-            log.warning("[run:%s] ReportAnalysisAgent skipped: %s", run_id, agent_err)
+            log.warning("[run:%s] ReportAnalyzer skipped: %s", run_id, agent_err)
 
         # ── Summary ──────────────────────────────────────────────────────
         raw = pytest_data.get("summary", {})
@@ -229,7 +232,7 @@ def run_tests():
 
                 execution_log = [e.get("msg", "") for e in call.get("log", []) if e.get("msg")]
 
-                # Pull enriched analysis from ReportAnalysisAgent
+                # Pull enriched analysis from ReportAnalyzer
                 enriched = agent_lookup.get(node_id, {})
 
                 failed_tests.append(
@@ -287,11 +290,22 @@ def run_tests():
         log.info("[run:%s] Done — %s", run_id, payload["execution_status"])
         return jsonify(payload), 200
 
-    except Exception as exc:
-        tb = traceback.format_exc()
-        log.error("[run:%s] ERROR:\n%s", run_id, tb)
+    except subprocess.TimeoutExpired:
+        log.error("[run:%s] pytest timed out after %ss", run_id, TEST_RUNNER_PYTEST_TIMEOUT_SECONDS)
         return make_response(
-            jsonify({"error": str(exc), "traceback": tb, "run_id": run_id}),
+            jsonify(
+                {
+                    "error": f"Test run timed out after {TEST_RUNNER_PYTEST_TIMEOUT_SECONDS}s",
+                    "run_id": run_id,
+                }
+            ),
+            504,
+        )
+    except Exception:
+        # Full traceback goes to the server log only; never to the HTTP client.
+        log.error("[run:%s] ERROR:\n%s", run_id, traceback.format_exc())
+        return make_response(
+            jsonify({"error": "Internal error while running tests", "run_id": run_id}),
             500,
         )
 

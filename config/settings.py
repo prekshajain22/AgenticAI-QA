@@ -22,10 +22,19 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# AI model names (with sensible defaults)
-OPENAI_MODEL = os.getenv("OPENAI_MODEL")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+# AI model names
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
+
+# TLS behavior for model HTTP clients
+MODEL_TLS_VERIFY = os.getenv("MODEL_TLS_VERIFY", "true").lower() == "true"
+
+# Hard time limit (seconds) for each AI failure-analysis call made by /run-tests.
+AI_ANALYSIS_TIMEOUT_SECONDS = int(os.getenv("AI_ANALYSIS_TIMEOUT_SECONDS", "60"))
+
+# MCP server versions
+MCP_ATLASSIAN_VERSION = os.getenv("MCP_ATLASSIAN_VERSION", "0.24.4")
+PLAYWRIGHT_MCP_VERSION = os.getenv("PLAYWRIGHT_MCP_VERSION", "0.0.85")
 
 # Jira
 JIRA_URL = os.getenv("JIRA_URL")
@@ -38,6 +47,8 @@ JIRA_PROJECT_NAME = os.getenv("JIRA_PROJECT_NAME")
 FLASK_SECRET = os.getenv("FLASK_SECRET")
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5001"))
+# Hard limit for the pytest subprocess started by /run-tests.
+TEST_RUNNER_PYTEST_TIMEOUT_SECONDS = int(os.getenv("TEST_RUNNER_PYTEST_TIMEOUT_SECONDS", "900"))
 
 TEST_RUNNER_OUTPUT_DIR = os.getenv("TEST_RUNNER_OUTPUT_DIR", "output")
 TEST_RUNNER_REPORTS_DIR = os.getenv("TEST_RUNNER_REPORTS_DIR", "reports")

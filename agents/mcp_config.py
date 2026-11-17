@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import httpx
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_ext.tools.mcp import StdioServerParams
@@ -12,9 +15,14 @@ from config.settings import (
     JIRA_API_TOKEN,
     JIRA_URL,
     JIRA_USERNAME,
+    MCP_ATLASSIAN_VERSION,
+    MODEL_TLS_VERIFY,
     OPENROUTER_API_KEY,
     OPENROUTER_MODEL,
+    PLAYWRIGHT_MCP_VERSION,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class MCPConfig:
@@ -43,7 +51,7 @@ class MCPConfig:
             model=GEMINI_MODEL,
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             api_key=GEMINI_API_KEY,
-            http_client=httpx.AsyncClient(verify=False),
+            http_client=httpx.AsyncClient(verify=MODEL_TLS_VERIFY),
             model_info={
                 "vision": False,
                 "function_calling": True,
@@ -66,7 +74,7 @@ class MCPConfig:
             model=OPENROUTER_MODEL,
             base_url="https://openrouter.ai/api/v1",
             api_key=OPENROUTER_API_KEY,
-            http_client=httpx.AsyncClient(verify=False),
+            http_client=httpx.AsyncClient(verify=MODEL_TLS_VERIFY),
             model_info={
                 "vision": False,
                 "function_calling": True,
@@ -103,7 +111,9 @@ class MCPConfig:
             raise ValueError(f"Missing Jira credentials: {', '.join(missing)}. Add to .env.")
         return StdioServerParams(
             command="uvx",
-            args=["mcp-atlassian"],
+            # Pinned via uvx's `package@version` syntax. Credentials go through env
+            # (not CLI args) so the token isn't visible in the process list.
+            args=[f"mcp-atlassian@{MCP_ATLASSIAN_VERSION}"],
             env={
                 "JIRA_URL": JIRA_URL,
                 "JIRA_USERNAME": JIRA_USERNAME,
@@ -116,14 +126,19 @@ class MCPConfig:
 
     @staticmethod
     def playwright_server_params() -> StdioServerParams:
-        """StdioServerParams for the Playwright MCP server (npx @playwright/mcp@latest).
+        """StdioServerParams for the Playwright MCP server (npx @playwright/mcp@<pinned>)."""
 
-        Note: The @playwright/mcp stdio server always runs headless — it communicates
-        over stdio and does not support a visible browser window.  To inspect what
-        the agent is doing, check the snapshot files written to .playwright-mcp/.
-        """
+        pkg = f"@playwright/mcp@{PLAYWRIGHT_MCP_VERSION}"
+        if sys.platform == "win32":
+            # npx is a .cmd shim on Windows; CreateProcess can't resolve it directly.
+            command, args = "cmd", ["/c", "npx", "-y", pkg]
+        else:
+            command, args = "npx", ["-y", pkg]
+        # cwd is pinned so relative paths the agent passes (e.g. screenshots under
+        # output/screenshots/) always resolve against the project root.
         return StdioServerParams(
-            command="npx",
-            args=["@playwright/mcp@latest"],
+            command=command,
+            args=args,
             read_timeout_seconds=60,
+            cwd=str(PROJECT_ROOT),
         )

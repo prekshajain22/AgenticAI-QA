@@ -9,7 +9,7 @@ Uses ``AgentFactory`` and ``MCPConfig.default_client()`` so the provider
 — no hardcoded API keys here.
 
 The public interface is intentionally *synchronous* so that the call-chain
-(ReportAnalysisAgent → Flask route → pytest) does not need async plumbing.
+(ReportAnalyzer → Flask route → pytest) does not need async plumbing.
 The async AutoGen call is bridged via ``asyncio.run()`` / a thread-pool.
 """
 
@@ -20,6 +20,7 @@ import logging
 from agents.agent_factory import AgentFactory
 from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
+from config.settings import AI_ANALYSIS_TIMEOUT_SECONDS
 
 log = logging.getLogger(__name__)
 
@@ -47,11 +48,14 @@ async def _analyse_async(failure: dict) -> str:
             "Logs:\n"
             f"{logs}"
         )
-        result = await agent.run(task=task)
+        result = await asyncio.wait_for(agent.run(task=task), timeout=AI_ANALYSIS_TIMEOUT_SECONDS)
         if result.messages:
             last = result.messages[-1]
             return last.content if isinstance(last.content, str) else str(last.content)
         return "AI analysis unavailable: no response received."
+    except asyncio.TimeoutError:
+        log.warning("AI failure analysis timed out after %ss", AI_ANALYSIS_TIMEOUT_SECONDS)
+        return f"AI analysis unavailable: timed out after {AI_ANALYSIS_TIMEOUT_SECONDS}s."
     except Exception as exc:  # noqa: BLE001
         log.warning("AI failure analysis skipped: %s", exc)
         return f"AI analysis unavailable: {exc}."
