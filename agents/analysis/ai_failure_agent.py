@@ -48,9 +48,7 @@ async def _analyse_async(failure: dict) -> str:
             "Logs:\n"
             f"{logs}"
         )
-        result = await asyncio.wait_for(
-            agent.run(task=task), timeout=AI_ANALYSIS_TIMEOUT_SECONDS
-        )
+        result = await asyncio.wait_for(agent.run(task=task), timeout=AI_ANALYSIS_TIMEOUT_SECONDS)
         if result.messages:
             last = result.messages[-1]
             return last.content if isinstance(last.content, str) else str(last.content)

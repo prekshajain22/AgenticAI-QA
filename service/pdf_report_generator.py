@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -156,9 +157,9 @@ def generate_pdf(data, output_path=None, project_root=None):
             name = test.get("name", "Unknown Test")
 
             if status == "PASSED":
-                content.append(Paragraph(f"&#10003;  {name}", pass_style))
+                content.append(Paragraph(f"&#10003;  {escape(str(name))}", pass_style))
             else:
-                content.append(Paragraph(f"&#10007;  {name}", fail_style))
+                content.append(Paragraph(f"&#10007;  {escape(str(name))}", fail_style))
 
     # --- Failed Test Details ---
     failed_tests = data.get("failed_tests", [])
@@ -196,21 +197,21 @@ def generate_pdf(data, output_path=None, project_root=None):
             execution_log = test.get("execution_log", [])
             screenshot = test.get("screenshot")
 
-            content.append(Paragraph(f"&#10007;  {name}", fail_style))
+            content.append(Paragraph(f"&#10007;  {escape(str(name))}", fail_style))
             content.append(Spacer(1, 2 * mm))
 
             # Execution trace — completed actions
             if execution_log:
                 content.append(Paragraph("Execution Trace:", normal_style))
                 for log_msg in execution_log:
-                    content.append(Paragraph(f"&#10003;  {log_msg}", log_style))
+                    content.append(Paragraph(f"&#10003;  {escape(str(log_msg))}", log_style))
                 content.append(Spacer(1, 2 * mm))
 
             # Failing step
             if failing_step:
                 content.append(
                     Paragraph(
-                        f"&#10007;  Failing Step:  {failing_step}",
+                        f"&#10007;  Failing Step:  {escape(str(failing_step))}",
                         step_fail_style,
                     )
                 )
@@ -220,7 +221,7 @@ def generate_pdf(data, output_path=None, project_root=None):
             if crash_message:
                 content.append(
                     Paragraph(
-                        crash_message.replace("\n", "<br/>"),
+                        escape(str(crash_message)).replace("\n", "<br/>"),
                         error_style,
                     )
                 )
@@ -350,7 +351,7 @@ def generate_pipeline_pdf(data: dict, output_path=None) -> Path:
         content.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#bbbbbb")))
         content.append(Spacer(1, 2 * mm))
         for line in (text or "No output captured.").splitlines():
-            safe = line.replace("&", "&").replace("<", "<").replace(">", ">")
+            safe = escape(line)
             content.append(Paragraph(safe or "&nbsp;", body_style))
         content.append(Spacer(1, 4 * mm))
 

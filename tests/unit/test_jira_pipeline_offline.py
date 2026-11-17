@@ -37,9 +37,7 @@ def make_report(records):
         ("No evidence returned", "markers"),
         (make_report([make_record("SAUCE-99")]), "not present"),
         (
-            make_report(
-                [make_record(screenshot_path="missing.png", evidence_type="screenshot")]
-            ),
+            make_report([make_record(screenshot_path="missing.png", evidence_type="screenshot")]),
             "does not exist",
         ),
     ],
@@ -118,3 +116,22 @@ def test_pipeline_reports_valid_records_even_if_other_records_are_invalid(monkey
         validated_evidence=[valid],
         verification_errors=verification["errors"],
     )
+
+
+def test_pipeline_blocks_jira_writeback_when_stage1_issues_are_missing(monkeypatch, tmp_path):
+    """Stage 1 yielding no issue keys must fail closed, even if the browser stage invents one."""
+    analysis = AsyncMock(return_value="No issue keys here\nHANDOFF TO AUTOMATION")
+    browser = AsyncMock(return_value=make_report([make_record("SAUCE-1")]))
+    reporter = AsyncMock(return_value="JIRA UPDATED")
+    monkeypatch.setattr(jira_playwright, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(jira_playwright, "run_bug_analyst", analysis)
+    monkeypatch.setattr(jira_playwright, "run_playwright", browser)
+    monkeypatch.setattr(jira_playwright, "run_comment_publisher", reporter)
+
+    result = asyncio.run(jira_playwright.run())
+
+    reporter.assert_not_awaited()
+    verification = json.loads(result["verification"])
+    assert verification["status"] == "INCONCLUSIVE"
+    assert any("refusing Jira write-back" in error for error in verification["errors"])
+    assert result["jira_update"].startswith("SKIPPED")

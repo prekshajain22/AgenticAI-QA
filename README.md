@@ -91,13 +91,6 @@ Each component can be run standalone for testing, or via its pipeline.
 | `agents/analysis/ai_failure_agent.py`   | AI agent (AutoGen)                  | Explains a failed pytest test                              |
 | `agents/analysis/report_analyzer.py`    | Deterministic orchestration         | Classifies failures and calls `AIFailureAgent` per failure |
 
-Renamed modules (update any external scripts): `agents.jira.jira_bug_analyser` →
-`agents.jira.jira_bug_analyst_agent`, `agents.jira.jira_reporter` →
-`agents.jira.jira_comment_publisher`, and
-`agents.analysis.report_analysis_agent.ReportAnalysisAgent` →
-`agents.analysis.report_analyzer.ReportAnalyzer`. `agents/specs/jira_reporter.md` is a legacy
-prompt spec that the current deterministic publisher does not use.
-
 ```bash
 # Pipeline: Jira → Playwright → Jira (reads bugs, verifies them, reports back)
 python -m agents.pipelines.jira_playwright
@@ -110,8 +103,7 @@ python -m agents.jira.jira_comment_publisher   # WARNING: posts a sample comment
 
 Requires, at minimum, one AI provider key (`OPENROUTER_API_KEY` or
 `GEMINI_API_KEY`) and, for the Jira agents, `JIRA_URL` / `JIRA_USERNAME` /
-`JIRA_API_TOKEN`. See [ARCHITECTURE.md](ARCHITECTURE.md#configuration) for
-the full variable list and what each agent actually needs.
+`JIRA_API_TOKEN`
 
 The Jira agents connect via `mcp-atlassian`, launched through `uvx` — you'll
 need [`uv`](https://docs.astral.sh/uv/) installed on your machine
@@ -146,7 +138,7 @@ are run separately with `pytest tests/unit`.
 python service\test_runner.py
 ```
 
-Binds to `0.0.0.0:5001` by default (override with `FLASK_PORT` in `.env`).
+Binds to `0.0.0.0:8080` by default (override with `FLASK_PORT` in `.env`).
 Leave this running — it's the API n8n calls. Check it's up:
 
 ```powershell

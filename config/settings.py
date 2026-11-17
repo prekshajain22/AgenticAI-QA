@@ -47,6 +47,8 @@ JIRA_PROJECT_NAME = os.getenv("JIRA_PROJECT_NAME")
 FLASK_SECRET = os.getenv("FLASK_SECRET")
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
 FLASK_PORT = int(os.getenv("FLASK_PORT", "5001"))
+# Hard limit for the pytest subprocess started by /run-tests.
+TEST_RUNNER_PYTEST_TIMEOUT_SECONDS = int(os.getenv("TEST_RUNNER_PYTEST_TIMEOUT_SECONDS", "900"))
 
 TEST_RUNNER_OUTPUT_DIR = os.getenv("TEST_RUNNER_OUTPUT_DIR", "output")
 TEST_RUNNER_REPORTS_DIR = os.getenv("TEST_RUNNER_REPORTS_DIR", "reports")

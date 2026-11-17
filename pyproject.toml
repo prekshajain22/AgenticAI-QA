@@ -29,7 +29,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.15.20"
+    "ruff==0.15.20",
+    "pytest-cov>=5.0"
 ]
 
 [build-system]

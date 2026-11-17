@@ -46,6 +46,18 @@ def extract_structured_evidence(report_text: str) -> list[dict[str, Any]]:
     return data
 
 
+def _is_within_root(root: Path, relative_path: str) -> bool:
+    """Return True if ``relative_path`` resolves to a location inside ``root``."""
+    candidate = Path(relative_path)
+    if candidate.is_absolute():
+        return False
+    try:
+        (root / candidate).resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def validate_evidence_records(
     records: list[dict[str, Any]],
     project_root: str | Path,
@@ -108,6 +120,11 @@ def validate_evidence_records(
             continue
         if evidence_type not in ALLOWED_EVIDENCE_TYPES:
             errors.append(f"{prefix}: invalid evidence_type '{evidence_type}'")
+            continue
+
+        # Trust boundary: any artifact path must stay inside the project root.
+        if screenshot_path and not _is_within_root(root, screenshot_path):
+            errors.append(f"{prefix}: screenshot_path escapes the project root: {screenshot_path}")
             continue
 
         # Evidence artifacts are desirable but not always available.

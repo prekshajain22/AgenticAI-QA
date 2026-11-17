@@ -25,8 +25,8 @@ def test_run_tests_targets_browser_scenarios(
 
     calls = []
 
-    def fake_run(command, *, cwd, capture_output, text):
-        calls.append((command, cwd, capture_output, text))
+    def fake_run(command, *, cwd, capture_output, text, timeout):
+        calls.append((command, cwd, capture_output, text, timeout))
         result_arg = next(arg for arg in command if arg.startswith("--json-report-file="))
         result_path = result_arg.split("=", 1)[1]
         with open(result_path, "w", encoding="utf-8") as result_file:
@@ -68,7 +68,8 @@ def test_run_tests_targets_browser_scenarios(
     assert len(response.json["failed_tests"]) == int(outcome == "failed")
 
     assert len(calls) == 1
-    command, cwd, capture_output, text = calls[0]
+    command, cwd, capture_output, text, timeout = calls[0]
+    assert timeout == test_runner.TEST_RUNNER_PYTEST_TIMEOUT_SECONDS
     assert command[:5] == [
         test_runner.sys.executable,
         "-m",
@@ -82,6 +83,59 @@ def test_run_tests_targets_browser_scenarios(
     assert "--self-contained-html" in command
     assert cwd == tmp_path
     assert capture_output and text
+
+
+def _isolate_run_tests(monkeypatch, tmp_path):
+    monkeypatch.setattr(test_runner, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(test_runner, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(test_runner, "_FLASK_SECRET", "")
+    monkeypatch.setattr(test_runner, "_latest_pdf", None)
+
+
+def test_run_tests_returns_504_when_pytest_times_out(tmp_path, monkeypatch):
+    _isolate_run_tests(monkeypatch, tmp_path)
+    monkeypatch.setattr(test_runner, "TEST_RUNNER_PYTEST_TIMEOUT_SECONDS", 7)
+
+    def hanging_run(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr(test_runner.subprocess, "run", hanging_run)
+
+    response = test_runner.app.test_client().post(test_runner.TEST_RUNNER_RUN_TESTS_ENDPOINT)
+
+    assert response.status_code == 504
+    assert "timed out after 7s" in response.json["error"]
+    assert response.json["run_id"]
+    assert "traceback" not in response.json
+
+
+def test_run_tests_500_does_not_leak_traceback_or_exception_text(tmp_path, monkeypatch):
+    _isolate_run_tests(monkeypatch, tmp_path)
+
+    def broken_run(command, **kwargs):
+        raise RuntimeError("secret-internal-detail /srv/app/path")
+
+    monkeypatch.setattr(test_runner.subprocess, "run", broken_run)
+
+    response = test_runner.app.test_client().post(test_runner.TEST_RUNNER_RUN_TESTS_ENDPOINT)
+
+    assert response.status_code == 500
+    assert response.json["error"] == "Internal error while running tests"
+    assert "traceback" not in response.json
+    assert "secret-internal-detail" not in response.get_data(as_text=True)
+    assert "Traceback" not in response.get_data(as_text=True)
+
+
+def test_run_tests_500_when_pytest_produces_no_result_file(tmp_path, monkeypatch):
+    _isolate_run_tests(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        test_runner.subprocess, "run", lambda command, **kw: subprocess.CompletedProcess(command, 2)
+    )
+
+    response = test_runner.app.test_client().post(test_runner.TEST_RUNNER_RUN_TESTS_ENDPOINT)
+
+    assert response.status_code == 500
+    assert "traceback" not in response.json
 
 
 def test_pipeline_start_poll_and_complete_without_external_services(monkeypatch, tmp_path):
@@ -142,9 +196,7 @@ def test_pipeline_background_failure_is_visible_to_status(monkeypatch, tmp_path)
     from agents.pipelines import jira_playwright
 
     monkeypatch.setattr(test_runner, "_FLASK_SECRET", "")
-    monkeypatch.setattr(
-        test_runner, "_pipeline_job", {"job_id": "test-job", "status": "running"}
-    )
+    monkeypatch.setattr(test_runner, "_pipeline_job", {"job_id": "test-job", "status": "running"})
     monkeypatch.setattr(jira_playwright, "run", AsyncMock(side_effect=RuntimeError("test failure")))
 
     test_runner._run_pipeline_in_background("test-job")
@@ -160,6 +212,9 @@ def test_service_requires_configured_secret(monkeypatch):
     client = test_runner.app.test_client()
 
     assert client.get(test_runner.TEST_RUNNER_HEALTH_ENDPOINT).status_code == 401
-    assert client.get(
-        test_runner.TEST_RUNNER_HEALTH_ENDPOINT, headers={"X-Secret": "test-secret"}
-    ).status_code == 200
+    assert (
+        client.get(
+            test_runner.TEST_RUNNER_HEALTH_ENDPOINT, headers={"X-Secret": "test-secret"}
+        ).status_code
+        == 200
+    )

@@ -114,10 +114,12 @@ async def run(user_key: str = "standard_user") -> dict[str, str]:
     try:
         extracted_records = extract_structured_evidence(test_execution)
         stage1_issue_keys = _extract_stage1_issue_keys(bug_analysis)
+        if not stage1_issue_keys:
+            raise ValueError("Stage 1 did not provide Jira issue keys; refusing Jira write-back.")
         validated_records, verification_errors = validate_evidence_records(
             extracted_records,
             project_root=PROJECT_ROOT,
-            allowed_issue_keys=stage1_issue_keys if stage1_issue_keys else None,
+            allowed_issue_keys=stage1_issue_keys,
         )
         verification_result = {
             "status": "VALIDATED" if not verification_errors else "INCONCLUSIVE",

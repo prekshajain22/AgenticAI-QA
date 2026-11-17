@@ -26,7 +26,6 @@ Usage
 
 import asyncio
 
-from autogen_agentchat.agents import AssistantAgent
 from autogen_ext.tools.mcp import McpWorkbench
 
 from agents.agent_factory import AgentFactory
@@ -34,35 +33,11 @@ from agents.agent_specs import AgentSpecLoader
 from agents.mcp_config import MCPConfig
 from config.settings import BASE_URL, JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
-_SYNTHESIS_SYSTEM = """
-You are a Senior QA Analyst.
-You will be given raw Jira search results in JSON format.
-Analyse the issues and produce a structured report ending with HANDOFF TO AUTOMATION.
 
-CRITICAL RULES:
-- Use the EXACT issue key from the JSON (e.g. CRED-3, CRED-4).
-  Do NOT expand, rename, or guess project keys.
-  If the JSON shows "key": "CRED-4", write CRED-4 — never CREDENTIAL-4 or CREDENTIALS-4.
-- The smoke test URL must be the application's BASE_URL, not the Jira instance URL.
-  The application under test is separate from Jira.
-
-Output format:
-## Bugs Found
-- KEY: summary [priority]
-
-## Common Patterns
-<one paragraph>
-
-## Smoke Test Scenario
-Step 1 — <action>
-  URL: <application URL, not Jira URL>
-  Action: ...
-  Expected: ...
-
-(repeat for each relevant step)
-
-HANDOFF TO AUTOMATION
-""".strip()
+def _looks_like_raw_json(output: str) -> bool:
+    """True when the agent echoed raw JSON instead of writing the analysis report."""
+    stripped = (output or "").strip()
+    return stripped.startswith("{") or stripped.startswith("[")
 
 
 async def run() -> str:
@@ -103,13 +78,11 @@ After retrieving the bugs, produce the analysis report ending with: HANDOFF TO A
     output = result.messages[-1].content
 
     # ── Phase 2: synthesise if the model echoed raw JSON ──────────────────
-    stripped = output.strip()
-    if stripped.startswith("{") or stripped.startswith("["):
+    if _looks_like_raw_json(output):
         print("[BugAnalyst] Raw JSON detected — running synthesis phase…")
-        synthesis_agent = AssistantAgent(
+        synthesis_agent = factory.create_agent(
             name="BugAnalystSynthesiser",
-            model_client=model_client,
-            system_message=_SYNTHESIS_SYSTEM,
+            system_message=AgentSpecLoader().load_by_id("jira_bug_synthesis").render(),
             reflect_on_tool_use=False,
         )
         output = (

@@ -122,3 +122,100 @@ def test_build_inconclusive_report_marks_validation_failure():
     assert result["status"] == "INCONCLUSIVE"
     assert result["validated"] is False
     assert result["errors"] == ["schema invalid"]
+
+
+def _record(**overrides):
+    record = {
+        "step": "Verify CRED-1",
+        "status": "PASS",
+        "issue_key": "CRED-1",
+        "expected": "Expected result",
+        "actual": "Actual result",
+        "screenshot_path": "",
+        "evidence_type": "none",
+    }
+    record.update(overrides)
+    return record
+
+
+def _without(key):
+    record = _record()
+    del record[key]
+    return record
+
+
+@pytest.mark.parametrize(
+    ("record", "expected_error"),
+    [
+        ("not-a-dict", "record must be an object"),
+        (_without("expected"), "missing required keys"),
+        (_record(step="   "), "step is required"),
+        (_record(status="MAYBE"), "invalid status"),
+        (_record(expected="  "), "expected is required"),
+        (_record(actual=""), "actual is required"),
+        (_record(evidence_type="hologram"), "invalid evidence_type"),
+        (_record(evidence_type="screenshot", screenshot_path=""), "screenshot_path is required"),
+        (
+            _record(evidence_type="none", screenshot_path="output/screenshots/a.png"),
+            "must be empty",
+        ),
+        (_record(actual="Step failed badly"), "contradictory"),
+        (_record(issue_key=""), "issue_key is required"),
+        (_record(issue_key="OTHER-9"), "not present in Stage 1"),
+    ],
+)
+def test_validate_evidence_records_rejects_invalid_record(tmp_path: Path, record, expected_error):
+    validated, errors = validate_evidence_records(
+        [record], project_root=tmp_path, allowed_issue_keys={"CRED-1"}
+    )
+
+    assert validated == []
+    assert len(errors) == 1
+    assert expected_error in errors[0]
+    assert errors[0].startswith("record[1]")
+
+
+def test_validate_evidence_records_rejects_traversal_to_existing_file(tmp_path: Path):
+    project = tmp_path / "project"
+    project.mkdir()
+    (tmp_path / "secret.png").write_bytes(b"outside the project root")
+
+    validated, errors = validate_evidence_records(
+        [_record(evidence_type="screenshot", screenshot_path="../secret.png")],
+        project_root=project,
+    )
+
+    assert validated == []
+    assert any("escapes the project root" in error for error in errors)
+
+
+def test_validate_evidence_records_rejects_absolute_screenshot_path(tmp_path: Path):
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"x")
+
+    validated, errors = validate_evidence_records(
+        [_record(evidence_type="screenshot", screenshot_path=str(outside))],
+        project_root=tmp_path / "project",
+    )
+
+    assert validated == []
+    assert any("escapes the project root" in error for error in errors)
+
+
+def test_validate_evidence_records_keeps_valid_records_alongside_invalid_ones(tmp_path: Path):
+    validated, errors = validate_evidence_records(
+        [_record(), _record(status="MAYBE")], project_root=tmp_path
+    )
+
+    assert len(validated) == 1
+    assert len(errors) == 1
+    assert errors[0].startswith("record[2]")
+
+
+def test_extract_structured_evidence_rejects_bad_blocks():
+    with pytest.raises(ValueError, match="empty"):
+        extract_structured_evidence("STRUCTURED_EVIDENCE_START\n\nSTRUCTURED_EVIDENCE_END")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        extract_structured_evidence("STRUCTURED_EVIDENCE_START\n{oops\nSTRUCTURED_EVIDENCE_END")
+    with pytest.raises(ValueError, match="JSON array"):
+        extract_structured_evidence('STRUCTURED_EVIDENCE_START\n{"a": 1}\nSTRUCTURED_EVIDENCE_END')

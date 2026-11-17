@@ -23,6 +23,51 @@ def test_gemini_client_requires_api_key_and_returns_openai_compatible_client():
 
 
 # ---------------------------------------------------------------------------
+# openrouter_client / default_client
+# ---------------------------------------------------------------------------
+
+
+def test_openrouter_client_requires_api_key_and_returns_openai_compatible_client():
+    with patch("agents.mcp_config.OPENROUTER_API_KEY", ""):
+        with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+            MCPConfig.openrouter_client()
+    with patch("agents.mcp_config.OPENROUTER_API_KEY", "fake-key"):
+        assert isinstance(MCPConfig.openrouter_client(), OpenAIChatCompletionClient)
+
+
+def test_default_client_prefers_openrouter_over_gemini():
+    with (
+        patch("agents.mcp_config.OPENROUTER_API_KEY", "or-key"),
+        patch("agents.mcp_config.GEMINI_API_KEY", "gem-key"),
+        patch.object(MCPConfig, "openrouter_client", return_value="openrouter") as openrouter,
+        patch.object(MCPConfig, "gemini_client", return_value="gemini") as gemini,
+    ):
+        assert MCPConfig.default_client() == "openrouter"
+    openrouter.assert_called_once()
+    gemini.assert_not_called()
+
+
+def test_default_client_falls_back_to_gemini_when_no_openrouter_key():
+    with (
+        patch("agents.mcp_config.OPENROUTER_API_KEY", ""),
+        patch("agents.mcp_config.GEMINI_API_KEY", "gem-key"),
+        patch.object(MCPConfig, "openrouter_client", return_value="openrouter") as openrouter,
+        patch.object(MCPConfig, "gemini_client", return_value="gemini"),
+    ):
+        assert MCPConfig.default_client() == "gemini"
+    openrouter.assert_not_called()
+
+
+def test_default_client_raises_when_no_keys_configured():
+    with (
+        patch("agents.mcp_config.OPENROUTER_API_KEY", ""),
+        patch("agents.mcp_config.GEMINI_API_KEY", ""),
+    ):
+        with pytest.raises(ValueError, match="No model API key found"):
+            MCPConfig.default_client()
+
+
+# ---------------------------------------------------------------------------
 # jira_server_params
 # ---------------------------------------------------------------------------
 
