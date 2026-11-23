@@ -24,21 +24,31 @@ from agents.mcp_config import MCPConfig
 from config.settings import JIRA_PROJECT_KEY, JIRA_PROJECT_NAME
 
 
-def _build_issue_comment(issue_key: str, records: list[dict[str, Any]], errors: list[str]) -> str:
-    """Build a deterministic comment body for a single Jira issue."""
+def _count_statuses(records: list[dict[str, Any]]) -> dict[str, int]:
+    """Count PASS / FAIL / INCONCLUSIVE records (unknown statuses count as INCONCLUSIVE)."""
     by_status = {"PASS": 0, "FAIL": 0, "INCONCLUSIVE": 0}
     for rec in records:
         status = str(rec.get("status", "INCONCLUSIVE")).upper()
         if status not in by_status:
             status = "INCONCLUSIVE"
         by_status[status] += 1
+    return by_status
 
+
+def _overall_status(records: list[dict[str, Any]]) -> str:
+    """Roll up records for one issue: FAIL if any FAIL, INCONCLUSIVE if any, else PASS."""
+    by_status = _count_statuses(records)
     if by_status["FAIL"] > 0:
-        overall = "FAIL"
-    elif by_status["INCONCLUSIVE"] > 0:
-        overall = "INCONCLUSIVE"
-    else:
-        overall = "PASS"
+        return "FAIL"
+    if by_status["INCONCLUSIVE"] > 0 or by_status["PASS"] == 0:
+        return "INCONCLUSIVE"
+    return "PASS"
+
+
+def _build_issue_comment(issue_key: str, records: list[dict[str, Any]], errors: list[str]) -> str:
+    """Build a deterministic comment body for a single Jira issue."""
+    by_status = _count_statuses(records)
+    overall = _overall_status(records)
 
     lines: list[str] = [
         "QA Automation Verification Update",
@@ -100,6 +110,13 @@ async def run(
     Returns
     -------
     A deterministic status report ending with ``'JIRA UPDATED'`` when comments were posted.
+
+    Notes
+    -----
+    Jira is only written to when the tests actually ran and the outcome for an issue is
+    definitive (overall PASS or FAIL). Issues whose outcome is INCONCLUSIVE (e.g. the
+    LLM ran out of tokens / was rate limited, the browser stage crashed, or evidence is
+    incomplete) are never commented on.
     """
     del bug_analysis_report  # kept for signature compatibility
     errors = verification_errors or []
@@ -119,6 +136,21 @@ async def run(
     if not records_by_issue:
         return "SKIPPED: Validated evidence had no issue_key values. No Jira comments were posted."
 
+    # Only definitive results (PASS / FAIL) may be written to Jira.
+    publishable: dict[str, list[dict[str, Any]]] = {}
+    skipped_keys: list[str] = []
+    for issue_key, issue_records in records_by_issue.items():
+        if _overall_status(issue_records) in ("PASS", "FAIL"):
+            publishable[issue_key] = issue_records
+        else:
+            skipped_keys.append(issue_key)
+
+    if not publishable:
+        return (
+            "SKIPPED: No definitive PASS/FAIL results (outcome INCONCLUSIVE for: "
+            f"{', '.join(sorted(skipped_keys))}). No Jira comments were posted."
+        )
+
     posted_keys: list[str] = []
 
     async with McpWorkbench(MCPConfig.jira_server_params()) as jira_mcp:
@@ -126,7 +158,7 @@ async def run(
         if not any(_tool_name(tool) == "jira_add_comment" for tool in tools):
             raise RuntimeError("jira_add_comment tool is not available in Jira MCP server.")
 
-        for issue_key, issue_records in records_by_issue.items():
+        for issue_key, issue_records in publishable.items():
             comment = _build_issue_comment(issue_key, issue_records, errors)
             result = await jira_mcp.call_tool(
                 "jira_add_comment", {"issue_key": issue_key, "body": comment}
@@ -139,7 +171,12 @@ async def run(
             posted_keys.append(issue_key)
 
     posted_keys_sorted = sorted(posted_keys)
-    return "Jira comments posted for: " + ", ".join(posted_keys_sorted) + "\nJIRA UPDATED"
+    report = "Jira comments posted for: " + ", ".join(posted_keys_sorted)
+    if skipped_keys:
+        report += "\nSkipped (INCONCLUSIVE, not written to Jira): " + ", ".join(
+            sorted(skipped_keys)
+        )
+    return report + "\nJIRA UPDATED"
 
 
 async def main() -> None:

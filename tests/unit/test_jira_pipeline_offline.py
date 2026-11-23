@@ -61,20 +61,9 @@ def test_pipeline_skips_jira_when_no_valid_evidence(
     )
     verification = json.loads(result["verification"])
     assert verification["status"] == "INCONCLUSIVE"
-
-    if expected_errors == "markers":
-        # When the browser stage fails before producing evidence, the pipeline now
-        # posts deterministic INCONCLUSIVE comments per Stage-1 issue key.
-        assert verification["validated"] is True
-        assert verification["errors"] == []
-        assert len(verification["records"]) == 1
-        assert verification["records"][0]["status"] == "INCONCLUSIVE"
-        reporter.assert_awaited_once()
-        assert result["jira_update"]  # should be non-empty
-    else:
-        assert any(expected_errors in error for error in verification.get("errors", []))
-        reporter.assert_not_awaited()
-        assert result["jira_update"].startswith("SKIPPED")
+    assert any(expected_errors in error for error in verification.get("errors", []))
+    reporter.assert_not_awaited()
+    assert result["jira_update"].startswith("SKIPPED")
 
 
 def test_pipeline_passes_validated_evidence_to_reporter(monkeypatch, tmp_path):
@@ -148,10 +137,11 @@ def test_pipeline_blocks_jira_writeback_when_stage1_issues_are_missing(monkeypat
     assert result["jira_update"].startswith("SKIPPED")
 
 
-def test_pipeline_fans_out_run_level_inconclusive_to_every_stage1_issue(monkeypatch, tmp_path):
-    """A whole-run failure (e.g. LLM 429) reports one INCONCLUSIVE record with no issue_key.
+def test_pipeline_does_not_write_to_jira_when_run_failed(monkeypatch, tmp_path):
+    """A whole-run failure (e.g. LLM tokens exhausted / 429) must never reach Jira.
 
-    It must be expanded to every Stage 1 issue so Jira is still updated.
+    The browser stage reports one run-level INCONCLUSIVE record with no issue_key.
+    The tests never ran, so no Jira comments may be posted.
     """
     run_level = make_record(
         "",
@@ -170,9 +160,8 @@ def test_pipeline_fans_out_run_level_inconclusive_to_every_stage1_issue(monkeypa
     result = asyncio.run(jira_playwright.run())
 
     verification = json.loads(result["verification"])
-    assert verification["validated"] is True
-    assert verification["errors"] == []
-    assert [r["issue_key"] for r in verification["records"]] == ["SAUCE-1", "SAUCE-2"]
-    assert all(r["status"] == "INCONCLUSIVE" for r in verification["records"])
-    reporter.assert_awaited_once()
-    assert result["jira_update"] == "JIRA UPDATED"
+    assert verification["status"] == "INCONCLUSIVE"
+    assert verification["validated"] is False
+    assert any("did not run to completion" in error for error in verification["errors"])
+    reporter.assert_not_awaited()
+    assert result["jira_update"].startswith("SKIPPED")
