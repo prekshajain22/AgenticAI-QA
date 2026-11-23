@@ -82,14 +82,30 @@ def test_publisher_groups_records_and_builds_comments(monkeypatch):
     assert "SAUCE-1, SAUCE-2" in result
 
 
-def test_publisher_overall_inconclusive_when_any_record_is_inconclusive(monkeypatch):
+def test_publisher_never_writes_inconclusive_results(monkeypatch):
+    """INCONCLUSIVE (e.g. LLM tokens exhausted) must not touch Jira at all."""
+    workbench = Mock()
+    monkeypatch.setattr(jira_comment_publisher, "McpWorkbench", workbench)
+
+    result = asyncio.run(
+        jira_comment_publisher.run(
+            "analysis",
+            [record("SAUCE-1", "INCONCLUSIVE"), record("SAUCE-2", "INCONCLUSIVE")],
+        )
+    )
+
+    assert result.startswith("SKIPPED")
+    assert "SAUCE-1" in result and "SAUCE-2" in result
+    assert "JIRA UPDATED" not in result
+    workbench.assert_not_called()
+
+
+def test_publisher_skips_issue_with_any_inconclusive_record(monkeypatch):
+    """An issue whose outcome is not definitive is skipped; definitive issues still post."""
+
     async def validate_call(name, arguments):
-        assert name == "jira_add_comment"
-        assert set(arguments) == {"issue_key", "body"}
-        assert arguments["issue_key"] == "SAUCE-1"
-        assert "Overall Result: INCONCLUSIVE" in arguments["body"]
-        # sanity: also show both records were counted
-        assert "Summary: PASS=1, FAIL=0, INCONCLUSIVE=1" in arguments["body"]
+        assert arguments["issue_key"] == "SAUCE-2"
+        assert "Overall Result: FAIL" in arguments["body"]
         return SimpleNamespace(is_error=False)
 
     call_tool = AsyncMock(side_effect=validate_call)
@@ -103,12 +119,18 @@ def test_publisher_overall_inconclusive_when_any_record_is_inconclusive(monkeypa
     result = asyncio.run(
         jira_comment_publisher.run(
             "analysis",
-            [record("SAUCE-1", "PASS"), record("SAUCE-1", "INCONCLUSIVE")],
+            [
+                record("SAUCE-1", "PASS"),
+                record("SAUCE-1", "INCONCLUSIVE"),
+                record("SAUCE-2", "FAIL"),
+            ],
         )
     )
 
     assert call_tool.await_count == 1
-    assert "SAUCE-1" in result
+    assert "Jira comments posted for: SAUCE-2" in result
+    assert "Skipped (INCONCLUSIVE, not written to Jira): SAUCE-1" in result
+    assert result.endswith("JIRA UPDATED")
 
 
 def test_publisher_fails_when_comment_tool_is_missing(monkeypatch):

@@ -177,8 +177,8 @@ def summarize_verification(
 ) -> dict[str, Any]:
     """Summarize verification for logging/telemetry.
 
-    Produces a stable, deterministic summary that explains *why* Jira may
-    receive INCONCLUSIVE updates.
+    Produces a stable, deterministic summary that explains *why* a run was
+    validated or inconclusive. INCONCLUSIVE outcomes are never written to Jira.
 
     Returns
     -------
